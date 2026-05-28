@@ -1,0 +1,32 @@
+@import "tailwindcss";
+
+/* 1. Scale the root HTML font size from default 16px to 17.5px (approx 109.3%) */
+html {
+  font-size: 17.5px !important;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* 2. Map absolute pixel utility classes used in the codebase to slightly larger sizes */
+@layer utilities {
+  /* Tiny utility text overrides (scaled up for high legibility) */
+  .\text-\[6px\] { font-size: 8px !important; }
+  .\text-\[7px\] { font-size: 9px !important; }
+  .\text-\[7\.5px\] { font-size: 9.5px !important; }
+  .\text-\[8px\] { font-size: 10px !important; }
+  .\text-\[8\.5px\] { font-size: 10.5px !important; }
+  .\text-\[9px\] { font-size: 11px !important; }
+  .\text-\[9\.5px\] { font-size: 11.5px !important; }
+  .\text-\[10px\] { font-size: 12px !important; }
+  .\text-\[10\.5px\] { font-size: 12.5px !important; }
+  .\text-\[11px\] { font-size: 13px !important; }
+  .\text-\[11\.4px\] { font-size: 13px !important; }
+  .\text-\[11\.5px\] { font-size: 13.5px !important; }
+  .\text-\[12px\] { font-size: 14px !important; }
+  .\text-\[12\.5px\] { font-size: 14.5px !important; }
+  .\text-\[13px\] { font-size: 15px !important; }
+  .\text-\[13\.5px\] { font-size: 15.5px !important; }
+  .\text-\[15px\] { font-size: 17px !important; }
+  .\text-\[17px\] { font-size: 19px !important; }
+  .\text-\[19px\] { font-size: 21px !important; }
+}

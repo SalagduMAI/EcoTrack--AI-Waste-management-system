@@ -1,0 +1,6 @@
+{
+  "name": "EcoTrack",
+  "description": "AI-Powered Intelligent Waste Management and Resident Advisory System for Residential Complexes",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
