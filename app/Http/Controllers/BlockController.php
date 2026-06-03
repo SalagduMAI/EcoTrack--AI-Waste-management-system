@@ -74,6 +74,12 @@ class BlockController extends Controller
             }
         }
 
+        \App\Models\ActivityLog::create([
+            'type' => 'resident',
+            'text' => "Added new housing structure: {$block->name} (" . ($request->total_floors ?? 5) . " floors)",
+            'icon' => 'resident'
+        ]);
+
         return response()->json([
             'status' => 'success',
             'message' => 'Block structure successfully established.',
@@ -115,6 +121,12 @@ class BlockController extends Controller
             'notes' => $request->notes,
         ]);
 
+        \App\Models\ActivityLog::create([
+            'type' => 'resident',
+            'text' => "Modified housing block structure settings: {$block->name}",
+            'icon' => 'resident'
+        ]);
+
         return response()->json([
             'status' => 'success',
             'message' => 'Block structure modified successfully.',
@@ -127,7 +139,14 @@ class BlockController extends Controller
      */
     public function destroy(Block $block): JsonResponse
     {
+        $blockName = $block->name;
         $block->delete();
+
+        \App\Models\ActivityLog::create([
+            'type' => 'resident',
+            'text' => "Permanently removed housing block: {$blockName}",
+            'icon' => 'resident'
+        ]);
 
         return response()->json([
             'status' => 'success',

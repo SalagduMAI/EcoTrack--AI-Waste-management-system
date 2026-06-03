@@ -1,9 +1,131 @@
 import { useState, useEffect } from 'react';
+import { HashRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import Login from './components/Login';
 import AdminPortal from './components/AdminPortal';
 import WorkerPortal from './components/WorkerPortal';
 import ResidentPortal from './components/ResidentPortal';
 import type { LoginUser } from './types';
+
+function AppContent({
+  token,
+  user,
+  isVerifying,
+  handleLoginSuccess,
+  handleLogout,
+  setUser
+}: {
+  token: string | null;
+  user: LoginUser | null;
+  isVerifying: boolean;
+  handleLoginSuccess: (token: string, user: any) => void;
+  handleLogout: () => void;
+  setUser: React.Dispatch<React.SetStateAction<LoginUser | null>>;
+}) {
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  // Watch auth state and route changes to perform redirects
+  useEffect(() => {
+    if (isVerifying) return;
+
+    const path = location.pathname;
+
+    if (!token || !user) {
+      // Not logged in -> only allow /login
+      if (path !== '/login') {
+        navigate('/login', { replace: true });
+      }
+    } else {
+      // Logged in -> redirect if at /login or /
+      if (path === '/login' || path === '/') {
+        if (user.role === 'admin') navigate('/admin', { replace: true });
+        else if (user.role === 'worker') navigate('/worker', { replace: true });
+        else if (user.role === 'resident') navigate('/resident', { replace: true });
+      } else {
+        // Logged in but trying to access an unauthorized portal -> redirect to their authorized portal
+        if (path === '/admin' && user.role !== 'admin') {
+          navigate(user.role === 'worker' ? '/worker' : '/resident', { replace: true });
+        } else if (path === '/worker' && user.role !== 'worker') {
+          navigate(user.role === 'admin' ? '/admin' : '/resident', { replace: true });
+        } else if (path === '/resident' && user.role !== 'resident') {
+          navigate(user.role === 'admin' ? '/admin' : '/worker', { replace: true });
+        }
+      }
+    }
+  }, [token, user, isVerifying, location.pathname, navigate]);
+
+  if (isVerifying) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+        <div className="w-8 h-8 border-3 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  return (
+    <Routes>
+      <Route
+        path="/login"
+        element={
+          !token ? (
+            <Login onLoginSuccess={handleLoginSuccess} />
+          ) : (
+            <Navigate to={user.role === 'admin' ? '/admin' : user.role === 'worker' ? '/worker' : '/resident'} replace />
+          )
+        }
+      />
+      <Route
+        path="/admin"
+        element={
+          token && user && user.role === 'admin' ? (
+            <AdminPortal
+              token={token}
+              user={user}
+              onLogout={handleLogout}
+              onUserUpdate={(freshUser) => {
+                setUser(freshUser);
+                localStorage.setItem('ecotrack_user_profile', JSON.stringify(freshUser));
+              }}
+            />
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
+      />
+      <Route
+        path="/worker"
+        element={
+          token && user && user.role === 'worker' ? (
+            <WorkerPortal token={token} user={user} onLogout={handleLogout} />
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
+      />
+      <Route
+        path="/resident"
+        element={
+          token && user && user.role === 'resident' ? (
+            <ResidentPortal token={token} user={user} onLogout={handleLogout} />
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
+      />
+      {/* Fallback route */}
+      <Route
+        path="*"
+        element={
+          !token ? (
+            <Navigate to="/login" replace />
+          ) : (
+            <Navigate to={user.role === 'admin' ? '/admin' : user.role === 'worker' ? '/worker' : '/resident'} replace />
+          )
+        }
+      />
+    </Routes>
+  );
+}
 
 export default function App() {
   const [token, setToken] = useState<string | null>(null);
@@ -18,7 +140,6 @@ export default function App() {
     if (cachedToken && cachedUser) {
       try {
         const parsedUser: LoginUser = JSON.parse(cachedUser);
-        // Verify the token is still valid against the backend
         fetch('/api/user', {
           headers: {
             'Authorization': `Bearer ${cachedToken}`,
@@ -46,13 +167,11 @@ export default function App() {
                 setUser(parsedUser);
               }
             } else {
-              // Token expired or revoked — clear session
               localStorage.removeItem('ecotrack_jwt_token');
               localStorage.removeItem('ecotrack_user_profile');
             }
           })
           .catch(() => {
-            // Backend unreachable — restore cached session for offline support
             setToken(cachedToken);
             setUser(parsedUser);
           })
@@ -91,49 +210,16 @@ export default function App() {
     localStorage.removeItem('ecotrack_user_profile');
   };
 
-  // Show nothing while verifying cached token
-  if (isVerifying) {
-    return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
-        <div className="w-8 h-8 border-3 border-emerald-500 border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
-  }
-
-  // Session routing tree
-  if (!token || !user) {
-    return <Login onLoginSuccess={handleLoginSuccess} />;
-  }
-
-  switch (user.role) {
-    case 'admin':
-      return <AdminPortal token={token} user={user} onLogout={handleLogout} onUserUpdate={(freshUser) => {
-        setUser(freshUser);
-        localStorage.setItem('ecotrack_user_profile', JSON.stringify(freshUser));
-      }} />;
-    
-    case 'worker':
-      return <WorkerPortal token={token} user={user} onLogout={handleLogout} />;
-    
-    case 'resident':
-      return <ResidentPortal token={token} user={user} onLogout={handleLogout} />;
-    
-    default:
-      return (
-        <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center font-sans p-6 text-center">
-          <div className="p-4 bg-rose-500/10 border border-rose-500/20 rounded-2xl max-w-sm space-y-3">
-            <h2 className="text-sm font-bold text-rose-400">Undefined Access Privileges</h2>
-            <p className="text-xs text-slate-400 leading-relaxed">
-              Your profile does not map to a recognized logistics hierarchy. Please contact Complex Security.
-            </p>
-            <button
-              onClick={handleLogout}
-              className="px-4 py-2 bg-rose-500 hover:bg-rose-400 text-white font-bold rounded-xl text-xs transition-all cursor-pointer"
-            >
-              Return to Login
-            </button>
-          </div>
-        </div>
-      );
-  }
+  return (
+    <HashRouter>
+      <AppContent
+        token={token}
+        user={user}
+        isVerifying={isVerifying}
+        handleLoginSuccess={handleLoginSuccess}
+        handleLogout={handleLogout}
+        setUser={setUser}
+      />
+    </HashRouter>
+  );
 }

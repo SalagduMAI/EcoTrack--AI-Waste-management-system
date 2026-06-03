@@ -68,7 +68,7 @@ class AdminController extends Controller
         $recentCompletedJobs = Job::with(['worker', 'unit', 'floor.block'])
             ->where('status', 'done')
             ->orderBy('completed_at', 'desc')
-            ->take(3)
+            ->take(5)
             ->get()
             ->map(function ($job) {
                 return [
@@ -76,13 +76,14 @@ class AdminController extends Controller
                     'worker_name' => $job->worker->name ?? 'System',
                     'location' => ($job->unit) ? $job->unit->unit_number : ($job->floor ? "Block {$job->floor->block->name} - Floor {$job->floor->floor_number}" : 'Housing Block'),
                     'time_ago' => $job->completed_at ? $job->completed_at->diffForHumans() : 'Just now',
+                    'timestamp' => $job->completed_at ? $job->completed_at->timestamp : Carbon::now()->timestamp,
                 ];
             });
 
         $recentIncidents = Job::with(['worker', 'floor.block'])
             ->where('status', 'issue')
             ->orderBy('updated_at', 'desc')
-            ->take(2)
+            ->take(5)
             ->get()
             ->map(function ($job) {
                 return [
@@ -91,13 +92,14 @@ class AdminController extends Controller
                     'reason' => $job->issue_reason ?? 'Door locked',
                     'location' => "Block {$job->floor->block->name} - Floor {$job->floor->floor_number}",
                     'time_ago' => $job->updated_at->diffForHumans(),
+                    'timestamp' => $job->updated_at->timestamp,
                 ];
             });
 
         $recentPayments = Payment::with(['resident', 'unit'])
             ->where('status', 'paid')
             ->orderBy('paid_at', 'desc')
-            ->take(3)
+            ->take(5)
             ->get()
             ->map(function ($pay) {
                 return [
@@ -105,7 +107,21 @@ class AdminController extends Controller
                     'resident_name' => $pay->resident->name ?? 'Anonymous',
                     'amount' => $pay->amount,
                     'unit' => $pay->unit->unit_number ?? 'N/A',
-                    'time_ago' => $pay->paid_at->diffForHumans(),
+                    'time_ago' => $pay->paid_at ? $pay->paid_at->diffForHumans() : 'Recently',
+                    'timestamp' => $pay->paid_at ? $pay->paid_at->timestamp : ($pay->created_at ? $pay->created_at->timestamp : Carbon::now()->timestamp),
+                ];
+            });
+
+        $dbActivityLogs = \App\Models\ActivityLog::orderBy('created_at', 'desc')
+            ->take(15)
+            ->get()
+            ->map(function ($log) {
+                return [
+                    'type' => $log->type,
+                    'text' => $log->text,
+                    'icon' => $log->icon,
+                    'time_ago' => $log->created_at->diffForHumans(),
+                    'timestamp' => $log->created_at->timestamp,
                 ];
             });
 
@@ -113,7 +129,10 @@ class AdminController extends Controller
             ->merge($recentCompletedJobs)
             ->merge($recentIncidents)
             ->merge($recentPayments)
-            ->take(6);
+            ->merge($dbActivityLogs)
+            ->sortByDesc('timestamp')
+            ->take(15)
+            ->values();
 
         // System Red Flags
         $redFlags = [];
@@ -271,6 +290,12 @@ class AdminController extends Controller
                 }
             }
 
+            \App\Models\ActivityLog::create([
+                'type' => 'resident',
+                'text' => "Modified profile for {$role}: {$user->name}",
+                'icon' => 'resident'
+            ]);
+
             return response()->json([
                 'status' => 'success',
                 'message' => ucfirst($user->role) . ' profile updated and synchronized successfully.',
@@ -315,6 +340,12 @@ class AdminController extends Controller
             }
         }
 
+        \App\Models\ActivityLog::create([
+            'type' => 'resident',
+            'text' => "Onboarded new {$user->role} profile: {$user->name}",
+            'icon' => 'resident'
+        ]);
+
         return response()->json([
             'status' => 'success',
             'message' => ucfirst($user->role) . ' created and configured successfully.',
@@ -332,7 +363,15 @@ class AdminController extends Controller
             Unit::where('resident_id', $user->id)->update(['resident_id' => null]);
         }
 
+        $userName = $user->name;
+        $userRole = $user->role;
         $user->delete();
+
+        \App\Models\ActivityLog::create([
+            'type' => 'resident',
+            'text' => "Permanently deleted {$userRole} profile: {$userName}",
+            'icon' => 'resident'
+        ]);
 
         return response()->json([
             'status' => 'success',

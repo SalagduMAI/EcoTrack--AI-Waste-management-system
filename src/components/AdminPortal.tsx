@@ -12,71 +12,9 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { jsPDF } from 'jspdf';
 
-// Procedural, unique aesthetic vector QR code component
-const QRImage = ({ text, className = "w-16 h-16" }: { text: string; className?: string }) => {
-  let hash = 0;
-  for (let i = 0; i < text.length; i++) {
-    hash = text.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  
-  const gridSize = 15;
-  const pixels = [];
-  
-  const isFinder = (r: number, c: number) => {
-    if (r < 5 && c < 5) return true;
-    if (r < 5 && c >= gridSize - 5) return true;
-    if (r >= gridSize - 5 && c < 5) return true;
-    return false;
-  };
-
-  const isFinderFilled = (r: number, c: number) => {
-    if (r < 5 && c < 5) {
-      if (r === 0 || r === 4 || c === 0 || c === 4) return true;
-      if (r === 2 && c === 2) return true;
-      return false;
-    }
-    if (r < 5 && c >= gridSize - 5) {
-      const nc = c - (gridSize - 5);
-      if (r === 0 || r === 4 || nc === 0 || nc === 4) return true;
-      if (r === 2 && nc === 2) return true;
-      return false;
-    }
-    if (r >= gridSize - 5 && c < 5) {
-      const nr = r - (gridSize - 5);
-      if (nr === 0 || nr === 4 || c === 0 || c === 4) return true;
-      if (nr === 2 && c === 2) return true;
-      return false;
-    }
-    return false;
-  };
-
-  for (let r = 0; r < gridSize; r++) {
-    for (let c = 0; c < gridSize; c++) {
-      if (isFinder(r, c)) {
-        pixels.push({ r, c, active: isFinderFilled(r, c) });
-      } else {
-        const val = Math.abs(Math.sin(hash + r * 13 + c * 37));
-        pixels.push({ r, c, active: val > 0.43 });
-      }
-    }
-  }
-
-  return (
-    <svg viewBox={`0 0 ${gridSize} ${gridSize}`} className={className} fill="none" xmlns="http://www.w3.org/2000/svg">
-      {pixels.map((p, idx) => p.active && (
-        <rect
-          key={idx}
-          x={p.c}
-          y={p.r}
-          width="0.88"
-          height="0.88"
-          rx="0.15"
-          fill="#1E562F"
-        />
-      ))}
-    </svg>
-  );
-};
+import { QRImage } from './shared/QRImage';
+import { generateUnitsForBlock, getInitials, formatActivityTime } from '../utils/helpers';
+import { settingsTranslations } from '../config/translations';
 
 interface AdminPortalProps {
   token: string;
@@ -84,47 +22,6 @@ interface AdminPortalProps {
   onLogout: () => void;
   onUserUpdate?: (freshUser: any) => void;
 }
-
-// Global utility for generating apartment units dynamically
-const generateUnitsForBlock = (blockName: string, floorsCount: number, unitsPerFloor: number, existingUnits: any = null) => {
-  const units: any = {};
-  const blockLetter = blockName.replace(/Block\s+/i, '').trim().charAt(0) || 'U';
-  
-  for (let f = 1; f <= floorsCount; f++) {
-    const floorUnits = [];
-    for (let u = 1; u <= unitsPerFloor; u++) {
-      const unitNum = `${blockLetter}-${f}${u < 10 ? '0' + u : u}`;
-      
-      let resident: string | null = null;
-      let resident_phone: string | null = null;
-      let resident_email: string | null = null;
-      
-      if (existingUnits && existingUnits[f]) {
-        const found = existingUnits[f].find((item: any) => item.unit_number === unitNum);
-        if (found) {
-          resident = found.resident;
-          resident_phone = found.resident_phone;
-          resident_email = found.resident_email;
-        }
-      }
-
-      floorUnits.push({
-        unit_number: unitNum,
-        resident,
-        resident_phone,
-        resident_email
-      });
-    }
-    units[f] = floorUnits;
-  }
-  return units;
-};
-
-const getInitials = (firstName: string, lastName: string) => {
-  const f = firstName ? firstName.charAt(0) : '';
-  const l = lastName ? lastName.charAt(0) : '';
-  return (f + l).toUpperCase() || 'AS';
-};
 
 export default function AdminPortal({ token, user, onLogout, onUserUpdate }: AdminPortalProps) {
   // Navigation tabs mirroring the screenshot sidebar
@@ -400,6 +297,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
   
   // Real CSV Import state variables
   const [isImportCSVModalOpen, setIsImportCSVModalOpen] = useState(false);
+  const [isActivityLogModalOpen, setIsActivityLogModalOpen] = useState(false);
   const [csvRawText, setCsvRawText] = useState('');
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [csvParseError, setCsvParseError] = useState<string | null>(null);
@@ -983,6 +881,36 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
   // Recent activity log that mirrors the screenshot but prepends new actions
   const [activities, setActivities] = useState<any[]>([]);
 
+  // Track admin activities locally so they don't get overwritten by loadAdminMetrics()
+  const [adminActivities, setAdminActivities] = useState<any[]>(() => {
+    try {
+      const stored = localStorage.getItem('ecotrack_admin_activities');
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const trackAdminActivity = (type: string, text: string, icon: string) => {
+    const newActivity = {
+      id: `admin-act-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      type,
+      text,
+      time: 'Just now',
+      timestamp: Date.now(),
+      icon
+    };
+    setAdminActivities(prev => {
+      const updated = [newActivity, ...prev].slice(0, 50); // limit to 50
+      try {
+        localStorage.setItem('ecotrack_admin_activities', JSON.stringify(updated));
+      } catch (err) {
+        console.error("Failed to write admin activities to localStorage", err);
+      }
+      return updated;
+    });
+  };
+
   // Red flags matching the screenshot exactly
   const [redFlags, setRedFlags] = useState<any[]>([]);
 
@@ -998,13 +926,14 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
       };
 
       // Concurrent fetches, failing gracefully to local simulation
-      const [jobsRes, paymentsRes, complaintsRes, blocksRes, usersRes, userRes] = await Promise.all([
+      const [jobsRes, paymentsRes, complaintsRes, blocksRes, usersRes, userRes, dashboardRes] = await Promise.all([
         fetch('/api/admin/jobs', { headers }).catch(() => null),
         fetch('/api/admin/payments', { headers }).catch(() => null),
         fetch('/api/admin/complaints', { headers }).catch(() => null),
         fetch('/api/admin/blocks', { headers }).catch(() => null),
         fetch('/api/admin/users', { headers }).catch(() => null),
         fetch('/api/user', { headers }).catch(() => null),
+        fetch('/api/admin/dashboard', { headers }).catch(() => null),
       ]);
 
       let jobsData = null;
@@ -1013,6 +942,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
       let blocksData = null;
       let usersData = null;
       let userData = null;
+      let dashboardData = null;
 
       try {
         if (userRes && userRes.ok && userRes.headers.get('content-type')?.includes('application/json')) {
@@ -1035,6 +965,14 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
         }
       } catch (err) {
         console.error("Failed to parse user profile details", err);
+      }
+
+      try {
+        if (dashboardRes && dashboardRes.ok && dashboardRes.headers.get('content-type')?.includes('application/json')) {
+          dashboardData = await dashboardRes.json();
+        }
+      } catch (err) {
+        console.error("Failed to parse dashboard data", err);
       }
 
       try {
@@ -1214,6 +1152,231 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
         }
       } else {
         setUsers([]);
+      }
+
+      // ── COMPILE DYNAMIC RECENT ACTIVITIES & RED FLAGS ──
+      let liveActivities: any[] = [];
+
+      // 1. Try to parse from the backend pre-formatted activity feed if available
+      try {
+        if (dashboardData?.status === 'success' && Array.isArray(dashboardData.data?.activity_feed)) {
+          dashboardData.data.activity_feed.forEach((item: any, index: number) => {
+            let type = 'done';
+            let icon = 'done';
+            let text = '';
+            
+            if (item.type === 'job_completed') {
+              type = 'done';
+              icon = 'done';
+              text = `${item.worker_name || 'Worker'} completed collection at ${item.location || 'Location'}`;
+            } else if (item.type === 'incident_reported') {
+              type = 'issue';
+              icon = 'issue';
+              text = `${item.worker_name || 'Worker'} reported issue: ${item.reason || 'Issue'} at ${item.location || 'Location'}`;
+            } else if (item.type === 'payment_received') {
+              type = 'payment';
+              icon = 'payment';
+              text = `${item.resident_name || 'Resident'} paid LKR ${Number(item.amount || 0).toLocaleString()} for Unit ${item.unit || 'N/A'}`;
+            } else if (item.type === 'complaint') {
+              type = item.status === 'resolved' ? 'done' : 'issue';
+              icon = item.status === 'resolved' ? 'done' : 'issue';
+              text = item.status === 'resolved' 
+                ? `Complaint resolved: "${item.description}"` 
+                : `Complaint raised by ${item.resident_name || 'Resident'} (Unit ${item.unit || 'N/A'}): "${item.description}"`;
+            } else if (item.type === 'user_registered') {
+              type = 'resident';
+              icon = 'resident';
+              text = `Onboarded new ${item.role || 'resident'} profile: ${item.name || 'Occupant'}`;
+            } else if (item.type === 'block_created') {
+              type = 'resident';
+              icon = 'resident';
+              text = `Added new housing structure: ${item.name || 'Block'} (${item.floors_count || 5} floors)`;
+            } else {
+              type = item.type || 'done';
+              icon = item.icon || 'done';
+              text = item.text || '';
+            }
+
+            liveActivities.push({
+              id: item.id || `api-feed-${index}-${Date.now()}`,
+              type,
+              text,
+              time: item.time_ago || 'Recently',
+              timestamp: item.timestamp ? item.timestamp * 1000 : (Date.now() - (index * 60000)),
+              icon
+            });
+          });
+        }
+      } catch (err) {
+        console.error("Failed to parse API activity feed:", err);
+      }
+
+      // 2. If the API activity feed is empty, compile chronologically from raw jobs, payments, complaints data
+      if (liveActivities.length === 0) {
+        try {
+          const dbJobs = jobsData && (Array.isArray(jobsData) ? jobsData : (jobsData.data || []));
+          if (Array.isArray(dbJobs)) {
+            dbJobs.filter((j: any) => j.status === 'done').forEach((j: any) => {
+              try {
+                const compTime = j.completed_at ? new Date(j.completed_at) : null;
+                const timeStr = (compTime && !isNaN(compTime.getTime())) 
+                  ? compTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) 
+                  : 'Recently';
+                const timeVal = (compTime && !isNaN(compTime.getTime())) ? compTime.getTime() : 0;
+                
+                liveActivities.push({
+                  id: `job-done-${j.id}`,
+                  type: 'done',
+                  text: `${j.worker?.name || 'Worker'} completed collection at ${j.unit?.unit_number || (j.floor ? 'Block ' + (j.floor.block?.name || '') + ' - Floor ' + j.floor.floor_number : 'Housing Block')}`,
+                  time: timeStr,
+                  timestamp: timeVal,
+                  icon: 'done'
+                });
+              } catch (e) {
+                console.error("Error mapping done job in activities:", e);
+              }
+            });
+
+            dbJobs.filter((j: any) => j.status === 'issue').forEach((j: any) => {
+              try {
+                const updTime = j.updated_at ? new Date(j.updated_at) : null;
+                const timeStr = (updTime && !isNaN(updTime.getTime())) 
+                  ? updTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) 
+                  : 'Recently';
+                const timeVal = (updTime && !isNaN(updTime.getTime())) ? updTime.getTime() : 0;
+
+                liveActivities.push({
+                  id: `job-issue-${j.id}`,
+                  type: 'issue',
+                  text: `${j.worker?.name || 'Worker'} reported issue: ${j.issue_reason || 'Access block'} at ${j.unit?.unit_number || (j.floor ? 'Block ' + (j.floor.block?.name || '') + ' - Floor ' + j.floor.floor_number : 'Housing Block')}`,
+                  time: timeStr,
+                  timestamp: timeVal,
+                  icon: 'issue'
+                });
+              } catch (e) {
+                console.error("Error mapping issue job in activities:", e);
+              }
+            });
+          }
+        } catch (err) {
+          console.error("Error parsing jobs in activities:", err);
+        }
+
+        try {
+          const dbPayments = paymentsData?.data;
+          if (Array.isArray(dbPayments)) {
+            dbPayments.filter((p: any) => p.status === 'paid').forEach((p: any) => {
+              try {
+                const payTime = p.paid_at ? new Date(p.paid_at) : null;
+                const timeStr = (payTime && !isNaN(payTime.getTime())) 
+                  ? payTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) 
+                  : 'Recently';
+                const timeVal = (payTime && !isNaN(payTime.getTime())) ? payTime.getTime() : 0;
+
+                liveActivities.push({
+                  id: `pay-${p.id}`,
+                  type: 'payment',
+                  text: `${p.resident?.name || 'Resident'} paid LKR ${Number(p.amount || 0).toLocaleString()} for Unit ${p.unit?.unit_number || 'N/A'}`,
+                  time: timeStr,
+                  timestamp: timeVal,
+                  icon: 'payment'
+                });
+              } catch (e) {
+                console.error("Error mapping payment in activities:", e);
+              }
+            });
+          }
+        } catch (err) {
+          console.error("Error parsing payments in activities:", err);
+        }
+
+        try {
+          const dbComplaints = complaintsData?.data;
+          if (Array.isArray(dbComplaints)) {
+            dbComplaints.forEach((c: any) => {
+              try {
+                const compTime = c.created_at ? new Date(c.created_at) : null;
+                const timeStr = (compTime && !isNaN(compTime.getTime())) 
+                  ? compTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) 
+                  : 'Recently';
+                const timeVal = (compTime && !isNaN(compTime.getTime())) ? compTime.getTime() : 0;
+
+                liveActivities.push({
+                  id: `complaint-${c.id}`,
+                  type: c.status === 'resolved' ? 'done' : 'issue',
+                  text: `Complaint ${c.status === 'resolved' ? 'resolved' : 'raised'} by ${c.resident?.name || 'Resident'}: ${c.description || ''}`,
+                  time: timeStr,
+                  timestamp: timeVal,
+                  icon: c.status === 'resolved' ? 'done' : 'issue'
+                });
+              } catch (e) {
+                console.error("Error mapping complaint in activities:", e);
+              }
+            });
+          }
+        } catch (err) {
+          console.error("Error parsing complaints in activities:", err);
+        }
+      }
+
+      // Merge and sort activities (combining locally tracked admin actions with dynamic live ones)
+      let combinedActivities = [...adminActivities, ...liveActivities];
+       const seenIds = new Set();
+      const liveTexts = new Set(liveActivities.map(l => l.text));
+      combinedActivities = combinedActivities.filter(act => {
+        if (!act.id) return true;
+        if (typeof act.id === 'string' && act.id.startsWith('admin-act-') && liveTexts.has(act.text)) {
+          return false;
+        }
+        const dup = seenIds.has(act.id);
+        seenIds.add(act.id);
+        return !dup;
+      });
+
+      combinedActivities.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+
+      if (combinedActivities.length > 0) {
+        setActivities(combinedActivities);
+      } else {
+        setActivities([
+          { id: 1, type: 'scan', text: 'Sunil Kumara scanned Floor 3 QR Code (Block C)', time: '12 mins ago', timestamp: Date.now() - 720000, icon: 'scan' },
+          { id: 2, type: 'done', text: 'Completed garbage clearance for Unit C-302', time: '14 mins ago', timestamp: Date.now() - 840000, icon: 'done' },
+          { id: 3, type: 'issue', text: 'Sunil Kumara flagged C-304: Dumpster over capacity', time: '22 mins ago', timestamp: Date.now() - 1320000, icon: 'issue' },
+          { id: 4, type: 'payment', text: 'Levy Payment received online for Unit A-105 (LKR 1,000)', time: '1 hr ago', timestamp: Date.now() - 3600000, icon: 'payment' },
+          { id: 5, type: 'scan', text: 'Nimal Silva scanned Floor 1 QR Code (Block A)', time: '2 hrs ago', timestamp: Date.now() - 7200000, icon: 'scan' },
+          { id: 6, type: 'resident', text: 'New Resident assigned: Amaya Rajapaksa (A-301)', time: '3 hrs ago', timestamp: Date.now() - 10800000, icon: 'resident' }
+        ]);
+      }
+
+      // Parse redFlags with safety
+      try {
+        if (dashboardData?.status === 'success' && Array.isArray(dashboardData.data?.red_flags)) {
+          const flags = dashboardData.data.red_flags.map((flag: any, index: number) => {
+            let mappedId = 3;
+            if (flag.type === 'missed_collections') mappedId = 1;
+            else if (flag.type === 'low_rating') mappedId = 2;
+            
+            return {
+              id: mappedId || index,
+              title: flag.title,
+              subtext: flag.description
+            };
+          });
+          setRedFlags(flags);
+        } else {
+          setRedFlags([
+            { id: 1, title: 'Missed collection in Block C', subtext: 'Floor 3 missed yesterday • Reschedule' },
+            { id: 2, title: 'Worker Sunil Kumara rating concern', subtext: 'Dropped to 3.4★ on recent resident ratings' },
+            { id: 3, title: '4 overdue payments outstanding', subtext: 'LKR 4,000 total unpaid • Action recommended' }
+          ]);
+        }
+      } catch (err) {
+        console.error("Failed to parse red flags:", err);
+        setRedFlags([
+          { id: 1, title: 'Missed collection in Block C', subtext: 'Floor 3 missed yesterday • Reschedule' },
+          { id: 2, title: 'Worker Sunil Kumara rating concern', subtext: 'Dropped to 3.4★ on recent resident ratings' },
+          { id: 3, title: '4 overdue payments outstanding', subtext: 'LKR 4,000 total unpaid • Action recommended' }
+        ]);
       }
 
     } catch (e) {
@@ -2271,6 +2434,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
       if (!response.ok) throw new Error('Failed to generate bills');
       const result = await response.json();
       setFeedbackMessage(result.message || 'Monthly levies of LKR 1,000 generated successfully.');
+      trackAdminActivity('payment', `Generated monthly levies of LKR 1,000 for ${billingPeriod}`, 'payment');
       loadAdminMetrics();
     } catch (err) {
       setFeedbackMessage('Failed to generate monthly bills. Please try again.');
@@ -2575,16 +2739,11 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
     setFeedbackMessage(successMsg);
 
     // Track activity
-    setActivities([
-      {
-        id: Date.now(),
-        type: 'resident',
-        text: `CSV Resident Register Processed: Imported ${unitsUpdatedCount} units across complex structures`,
-        time: 'Just now',
-        icon: 'user'
-      },
-      ...activities
-    ]);
+    trackAdminActivity(
+      'resident',
+      `CSV Resident Register Processed: Imported ${unitsUpdatedCount} units across complex structures`,
+      'resident'
+    );
   };
 
   // Submit handlers for interactive Housing features
@@ -2632,16 +2791,11 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
       setIsAddBlockModalOpen(false);
       setAddBlockForm({ name: '', floors_count: '5', units_per_floor: '5', notes: '' });
 
-      setActivities([
-        { 
-          id: Date.now(), 
-          type: 'resident', 
-          text: `Added new housing structure: ${name} (${floors} floors)`, 
-          time: 'Just now', 
-          icon: 'user' 
-        },
-        ...activities
-      ]);
+      trackAdminActivity(
+        'resident',
+        `Added new housing structure: ${name} (${floors} floors)`,
+        'resident'
+      );
     }
   };
 
@@ -2784,16 +2938,11 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
           setActionLoading(false);
           setConfirmModal(null);
           
-          setActivities(prev => [
-            { 
-              id: Date.now(), 
-              type: 'resident', 
-              text: `Permanently removed housing block: ${targetBlock.name}`, 
-              time: 'Just now', 
-              icon: 'user' 
-            },
-            ...prev
-          ]);
+          trackAdminActivity(
+            'resident',
+            `Permanently removed housing block: ${targetBlock.name}`,
+            'resident'
+          );
         }
       }
     });
@@ -2998,16 +3147,11 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
         const residentObj = residents.find(r => r.id === selectedResidentId);
         setFeedbackMessage(`Successfully assigned occupant ${residentObj?.name} to unit ${assignTarget.unitNumber}!`);
         
-        setActivities([
-          { 
-            id: Date.now(), 
-            type: 'resident', 
-            text: `Assigned occupant ${residentObj?.name} to Unit ${assignTarget.unitNumber}`, 
-            time: 'Just now', 
-            icon: 'user' 
-          },
-          ...activities
-        ]);
+        trackAdminActivity(
+          'resident',
+          `Assigned occupant ${residentObj?.name || 'Resident'} to Unit ${assignTarget.unitNumber}`,
+          'resident'
+        );
       }
 
       await loadAdminMetrics(); // Reload all structures and users with updated DB states
@@ -3039,6 +3183,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
       });
       if (!response.ok) throw new Error();
       setFeedbackMessage('New waste collection task scheduled successfully.');
+      trackAdminActivity('scan', `Scheduled waste collection task for ${newJob.scheduled_date} (Shift: ${newJob.shift})`, 'scan');
       loadAdminMetrics();
     } catch (err: any) {
       console.error("handleCreateJob API error:", err);
@@ -3084,6 +3229,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
         throw new Error(errMsg);
       }
       setFeedbackMessage(`Success! Onboarded new worker profile: ${workerForm.fullName}`);
+      trackAdminActivity('resident', `Onboarded new worker profile: ${workerForm.fullName} (Shift: ${workerForm.shift})`, 'resident');
       loadAdminMetrics();
     } catch (err: any) {
       const workerObj = {
@@ -3101,6 +3247,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
       };
       setUsers(prev => [workerObj, ...prev]);
       setFeedbackMessage(`Enrolled Locally${serverErrorMsg}. Saved in simulated local cache.`);
+      trackAdminActivity('resident', `Onboarded new worker profile: ${workerForm.fullName} (Locally Saved)`, 'resident');
     } finally {
       setActionLoading(false);
       setIsAddWorkerModalOpen(false);
@@ -3173,6 +3320,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
       
       const result = await response.json().catch(() => null);
       setFeedbackMessage(`Success! Onboarded new resident profile: ${fullName}`);
+      trackAdminActivity('resident', `Onboarded new resident profile: ${fullName} (Unit ${residentForm.unit || 'N/A'})`, 'resident');
       loadAdminMetrics(); // Refresh all data including blocks (with updated resident assignments)
     } catch (err: any) {
       console.error("handleCreateResident error:", err);
@@ -3231,10 +3379,12 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
           });
           if (!response.ok) throw new Error();
           setFeedbackMessage(`Permanently deleted resident ${resident.name} profile from cloud database.`);
+          trackAdminActivity('resident', `Permanently deleted resident ${resident.name} profile`, 'resident');
           loadAdminMetrics();
         } catch (err) {
           setResidents(prev => prev.filter(r => r.id !== id));
           setFeedbackMessage(`Permanently deleted resident ${resident.name} profile (local UI fallback).`);
+          trackAdminActivity('resident', `Permanently deleted resident ${resident.name} profile (Locally)`, 'resident');
         } finally {
           setActionLoading(false);
           setConfirmModal(null);
@@ -3288,10 +3438,12 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
           });
           if (!response.ok) throw new Error();
           setFeedbackMessage(`Permanently deleted worker ${worker.name} profile from cloud database.`);
+          trackAdminActivity('resident', `Permanently deleted worker ${worker.name} profile`, 'resident');
           loadAdminMetrics();
         } catch (err) {
           setUsers(prev => prev.filter(u => u.id !== id));
           setFeedbackMessage(`Permanently deleted worker ${worker.name} profile (local UI fallback).`);
+          trackAdminActivity('resident', `Permanently deleted worker ${worker.name} profile (Locally)`, 'resident');
         } finally {
           setActionLoading(false);
           setConfirmModal(null);
@@ -3315,10 +3467,14 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
       });
       if (!response.ok) throw new Error();
       setFeedbackMessage('Complaint flagged as resolved successfully.');
+      const compObj = complaints.find(c => c.id === id);
+      trackAdminActivity('done', `Resolved complaint by ${compObj?.resident_name || 'Resident'}: "${compObj?.description || ''}"`, 'done');
       loadAdminMetrics();
     } catch {
       setComplaints(prev => prev.map(c => c.id === id ? { ...c, status: 'resolved', resolved_notes: notes, internal_notes: notes } : c));
       setFeedbackMessage(`Resolved complaint LOCALLY with notes: "${notes}"`);
+      const compObj = complaints.find(c => c.id === id);
+      trackAdminActivity('done', `Resolved complaint by ${compObj?.resident_name || 'Resident'} (Locally): "${compObj?.description || ''}"`, 'done');
     } finally {
       setActionLoading(false);
     }
@@ -3339,12 +3495,16 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
       });
       if (!response.ok) throw new Error();
       setFeedbackMessage('Complaint deleted successfully from database.');
+      const compObj = complaints.find(c => c.id === id);
+      trackAdminActivity('issue', `Deleted complaint by ${compObj?.resident_name || 'Resident'}`, 'issue');
       setSelectedComplaint(null);
       loadAdminMetrics();
     } catch {
+      const compObj = complaints.find(c => c.id === id);
       setComplaints(prev => prev.filter(c => c.id !== id));
       setSelectedComplaint(null);
       setFeedbackMessage('Complaint deleted successfully (local cache fallback).');
+      trackAdminActivity('issue', `Deleted complaint by ${compObj?.resident_name || 'Resident'} (Locally)`, 'issue');
     } finally {
       setActionLoading(false);
     }
@@ -4211,6 +4371,92 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
 
             </div>
 
+            {/* LIVE TELEMETRY & CONTROL HUB */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-in fade-in duration-300">
+              
+              {/* Quick Actions Panel */}
+              <div className="bg-white border border-gray-100 p-6 rounded-3xl shadow-sm flex flex-col justify-between">
+                <div>
+                  <h3 className="text-base font-black text-gray-900 tracking-tight flex items-center gap-2">
+                    <Sliders className="w-4 h-4 text-[#2E7D32]" />
+                    <span>Control Hub & Quick Actions</span>
+                  </h3>
+                  <p className="text-[10px] text-gray-400 font-bold uppercase mt-0.5">Shortcuts</p>
+                </div>
+                <div className="grid grid-cols-2 gap-3 mt-4">
+                  <button
+                    type="button"
+                    onClick={() => setIsAddResidentModalOpen(true)}
+                    className="flex flex-col items-center justify-center p-3 rounded-2xl bg-emerald-50/50 border border-emerald-100 hover:bg-emerald-50 hover:border-emerald-200 text-[#2E7D32] transition-all cursor-pointer text-center group"
+                  >
+                    <UserPlus className="w-5 h-5 mb-1.5 text-[#2E7D32] group-hover:scale-105 transition-transform" />
+                    <span className="text-[10px] font-extrabold tracking-tight">Add Resident</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveTab('jobs');
+                      setJobsSubView('calendar');
+                    }}
+                    className="flex flex-col items-center justify-center p-3 rounded-2xl bg-blue-50/30 border border-blue-100/50 hover:bg-blue-50 hover:border-blue-200 text-blue-800 transition-all cursor-pointer text-center group"
+                  >
+                    <Calendar className="w-5 h-5 mb-1.5 text-blue-600 group-hover:scale-105 transition-transform" />
+                    <span className="text-[10px] font-extrabold tracking-tight">Schedule Run</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsAddBlockModalOpen(true)}
+                    className="flex flex-col items-center justify-center p-3 rounded-2xl bg-amber-50/30 border border-amber-100/50 hover:bg-amber-50 hover:border-amber-200 text-amber-800 transition-all cursor-pointer text-center group"
+                  >
+                    <Building className="w-5 h-5 mb-1.5 text-amber-600 group-hover:scale-105 transition-transform" />
+                    <span className="text-[10px] font-extrabold tracking-tight">Create Block</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => downloadReportPdf()}
+                    className="flex flex-col items-center justify-center p-3 rounded-2xl bg-purple-50/30 border border-purple-100/50 hover:bg-purple-50 hover:border-purple-200 text-purple-800 transition-all cursor-pointer text-center group"
+                  >
+                    <Download className="w-5 h-5 mb-1.5 text-purple-600 group-hover:scale-105 transition-transform" />
+                    <span className="text-[10px] font-extrabold tracking-tight">Export Audit Log</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Active Duty Crew Tracker */}
+              <div className="bg-white border border-gray-100 p-6 rounded-3xl shadow-sm flex flex-col justify-between">
+                <div>
+                  <h3 className="text-base font-black text-gray-900 tracking-tight flex items-center gap-2">
+                    <Clock className="w-4 h-4 text-[#2E7D32]" />
+                    <span>Crew Monitoring Duty</span>
+                  </h3>
+                  <p className="text-[10px] text-gray-400 font-bold uppercase mt-0.5">Active field shifts</p>
+                </div>
+                <div className="space-y-3.5 mt-4">
+                  {users.filter(u => u.role === 'worker').slice(0, 3).map((w, index) => (
+                    <div key={w.id || index} className="flex justify-between items-center bg-gray-50/50 p-2.5 rounded-2xl border border-gray-100">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-6 h-6 rounded-full bg-emerald-100 flex items-center justify-center text-[9px] font-black text-[#2E7D32]">
+                          {w.avatar || 'W'}
+                        </div>
+                        <div>
+                          <p className="text-[10.5px] font-bold text-gray-800 leading-tight">{w.name}</p>
+                          <span className="text-[8px] text-gray-400 font-black tracking-wide uppercase mt-0.5 block">{w.shift || 'Morning'} shift</span>
+                        </div>
+                      </div>
+                      <span className="flex items-center gap-1.5 text-[8.5px] font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-lg uppercase tracking-wide">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                        On Duty
+                      </span>
+                    </div>
+                  ))}
+                  {users.filter(u => u.role === 'worker').length === 0 && (
+                    <p className="text-[10px] text-gray-400 font-bold text-center py-4">No active field workers.</p>
+                  )}
+                </div>
+              </div>
+
+            </div>
+
             {/* BOTTOM ROW: "Recent activity" with dynamic triggers vs "Red flags" alert columns */}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
               
@@ -4222,7 +4468,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                   </div>
                   <button 
                     type="button"
-                    onClick={() => setActiveTab('jobs')}
+                    onClick={() => setIsActivityLogModalOpen(true)}
                     className="text-xs font-extrabold text-[#2E7D32] hover:text-[#1E562F] hover:underline flex items-center gap-1 cursor-pointer"
                   >
                     <span>View all →</span>
@@ -4253,7 +4499,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                         </div>
                       </div>
                       <span className="text-[10px] font-bold text-gray-400 tracking-tight whitespace-nowrap ml-4">
-                        {item.time}
+                        {formatActivityTime(item.timestamp)}
                       </span>
                     </div>
                   ))}
@@ -7193,6 +7439,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                                           });
                                           if (!res.ok) throw new Error('Failed to mark payment');
                                           setFeedbackMessage(`Cleared invoice balance for Unit ${item.unit?.unit_number}.`);
+                                          trackAdminActivity('payment', `Cleared levy balance of LKR ${item.amount} for Unit ${item.unit?.unit_number || 'N/A'} (Occupant: ${item.resident_name || 'Resident'})`, 'payment');
                                           loadAdminMetrics();
                                         } catch {
                                           setFeedbackMessage('Failed to update payment. Please try again.');
@@ -8833,205 +9080,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
         })()}
 
         
-        {/* TAB 9: SETTINGS & CONFIGS (Settings tab) */}
         {activeTab === 'settings' && (() => {
-          const settingsTranslations = {
-            english: {
-              title: "Settings",
-              homeSettings: "Home / Settings",
-              profile: "Profile",
-              changePassword: "Change Password",
-              notifications: "Notifications",
-              languageRegion: "Language & Region",
-              securitySessions: "Security & Sessions",
-              helpSupport: "Help & Support",
-              
-              // Profile
-              profileHeader: "Profile",
-              profileSub: "Update your personal information",
-              firstName: "First Name",
-              lastName: "Last Name",
-              email: "Email",
-              role: "Role",
-              phone: "Phone",
-              scheme: "Scheme",
-              changePhoto: "Change photo",
-              
-              // Notification preferences
-              notificationPrefTitle: "Notification preferences",
-              notificationPrefSub: "Email + push notifications",
-              newComplaints: "New complaints",
-              newComplaintsSub: "Email + Push",
-              workerIncidents: "Worker Incidents",
-              workerIncidentsSub: "Email + Push",
-              paymentReceived: "Payment received",
-              paymentReceivedSub: "Push only",
-              weeklySummary: "Weekly summary",
-              weeklySummarySub: "Email",
-              
-              cancel: "Cancel",
-              saveChanges: "Save changes",
-              
-              // Change Password
-              currentPassword: "Current Password",
-              newPassword: "New Password",
-              confirmNewPassword: "Confirm New Password",
-              updatePassword: "Update Password",
-              passwordPrompt: "Update your password to protect your account",
-              
-              // Language & Region
-              interfaceLanguage: "Interface Language",
-              timezone: "Timezone",
-              systemCurrency: "System Currency",
-              localizationSub: "Configure residential language options and timezone variables",
-              
-              // Security & Sessions
-              securitySub: "Audit device access entries and multi-factor system configurations",
-              activeNow: "Active Now",
-              mfaHeader: "MFA Secondary Authentication Gate",
-              mfaSub: "Enables a dynamic authentication code challenge upon admin login.",
-              setupMfa: "Setup 2FA",
-              
-              // Help & Support
-              helpSub: "Search frequently asked questions and connect with developers",
-              helpIntro: "Need assist with EcoTrack features? Explore standard user manuals or register a ticket:",
-              faq1: "How do I generate housing unit QR codes?",
-              faq2: "Where do I adjust waste non-segregation fines?",
-              faq3: "How do I archive monthly collection reports?",
-              contactDev: "Contact Developer Support",
-              contactDetails: "Our support channel remains reachable 24/7 at support@ecotrack.org or standard hotlines."
-            },
-            sinhala: {
-              title: "සැකසුම්",
-              homeSettings: "ප්‍රධාන පිටුව / සැකසුම්",
-              profile: "පැතිකඩ",
-              changePassword: "මුරපදය වෙනස් කරන්න",
-              notifications: "දැනුම්දීම්",
-              languageRegion: "භාෂාව සහ කලාපය",
-              securitySessions: "ආරක්ෂාව සහ සැසි",
-              helpSupport: "උදවු සහ සහයෝගය",
-              
-              // Profile
-              profileHeader: "පැතිකඩ",
-              profileSub: "ඔබගේ පෞද්ගලික තොරතුරු යාවත්කාලීන කරන්න",
-              firstName: "මුල් නම",
-              lastName: "වාසගම",
-              email: "විද්‍යුත් තැපෑල",
-              role: "භූමිකාව",
-              phone: "දුරකථන අංකය",
-              scheme: "ක්‍රමය",
-              changePhoto: "ඡායාරූපය වෙනස් කරන්න",
-              
-              // Notification preferences
-              notificationPrefTitle: "දැනුම්දීම් මනාපයන්",
-              notificationPrefSub: "ඊමේල් + තල්ලු දැනුම්දීම්",
-              newComplaints: "නව පැමිණිලි",
-              newComplaintsSub: "ඊමේල් + තල්ලු",
-              workerIncidents: "සේවක සිදුවීම්",
-              workerIncidentsSub: "ඊමේල් + තල්ලු",
-              paymentReceived: "ගෙවීම් ලැබීම",
-              paymentReceivedSub: "තල්ලු පමණි",
-              weeklySummary: "සතිපතා සාරාංශය",
-              weeklySummarySub: "ඊමේල්",
-              
-              cancel: "අවලංගු කරන්න",
-              saveChanges: "වෙනස්කම් සුරකින්න",
-              
-              // Change Password
-              currentPassword: "වත්මන් මුරපදය",
-              newPassword: "නව මුරපදය",
-              confirmNewPassword: "නව මුරපදය තහවුරු කරන්න",
-              updatePassword: "මුරපදය යාවත්කාලීන කරන්න",
-              passwordPrompt: "ඔබගේ ගිණුම ආරක්ෂා කිරීමට ඔබගේ මුරපදය යාවත්කාලීන කරන්න",
-              
-              // Language & Region
-              interfaceLanguage: "අතුරුමුහුණත් භාෂාව",
-              timezone: "වේලා කලාපය",
-              systemCurrency: "පද්ධති මුදල්",
-              localizationSub: "නේවාසික භාෂා විකල්ප සහ වේලා කලාප විචල්‍යයන් වින්‍යාස කරන්න",
-              
-              // Security & Sessions
-              securitySub: "උපාංග ප්‍රවේශ සටහන් සහ බහු-සාධක පද්ධති සැකසුම් විගණනය කරන්න",
-              activeNow: "දැන් සක්‍රියයි",
-              mfaHeader: "MFA ද්විතීයික සත්‍යාපන ද්වාරය",
-              mfaSub: "පරිපාලක පිවිසුමේදී ගතික සත්‍යාපන කේත අභියෝගයක් සක්‍රීය කරයි.",
-              setupMfa: "2FA සකසන්න",
-              
-              // Help & Support
-              helpSub: "නිතර අසන ප්‍රශ්න සොයන්න සහ සංවර්ධකයින් සමඟ සම්බන්ධ වන්න",
-              helpIntro: "EcoTrack විශේෂාංග ගැන සහය අවශ්‍යද? සම්මත පරිශීලක අත්පොත් ගවේෂණය කරන්න හෝ ටිකට් පතක් ලියාපදිංජි කරන්න:",
-              faq1: "නිවාස ඒකක QR කේත උත්පාදනය කරන්නේ කෙසේද?",
-              faq2: "අපද්‍රව්‍ය වෙන් නොකිරීමේ දඩ මුදල් සකස් කරන්නේ කොහෙන්ද?",
-              faq3: "මාසික එකතු කිරීමේ වාර්තා සංරක්ෂණය කරන්නේ කෙසේද?",
-              contactDev: "සංවර්ධක සහාය අමතන්න",
-              contactDetails: "අපගේ සහාය සේවාව 24/7 පුරා support@ecotrack.org හෝ සම්මත ක්ෂණික ඇමතුම් මගින් සම්බන්ධ කරගත හැක."
-            },
-            tamil: {
-              title: "அமைப்புகள்",
-              homeSettings: "முகப்பு / அமைப்புகள்",
-              profile: "சுயவிவரம்",
-              changePassword: "கடவுச்சொல்லை மாற்று",
-              notifications: "அறிவிப்புகள்",
-              languageRegion: "மொழி மற்றும் பிராந்தியம்",
-              securitySessions: "பாதுகாப்பு & அமர்வுகள்",
-              helpSupport: "உதவி & ஆதரவு",
-              
-              // Profile
-              profileHeader: "சுயவிவரம்",
-              profileSub: "உங்கள் தனிப்பட்ட தகவலைப் புதுப்பிக்கவும்",
-              firstName: "முதல் பெயர்",
-              lastName: "கடைசி பெயர்",
-              email: "மின்னஞ்சல்",
-              role: "பதவி",
-              phone: "தொலைபேசி எண்",
-              scheme: "சுலோகம்",
-              changePhoto: "புகைப்படத்தை மாற்று",
-              
-              // Notification preferences
-              notificationPrefTitle: "அறிவிப்பு விருப்பத்தேர்வுகள்",
-              notificationPrefSub: "மின்னஞ்சல் + புஷ் அறிவிப்புகள்",
-              newComplaints: "புதிய புகார்கள்",
-              newComplaintsSub: "மின்னஞ்சல் + புஷ்",
-              workerIncidents: "பணியாளர் சம்பவங்கள்",
-              workerIncidentsSub: "மின்னஞ்சல் + புஷ்",
-              paymentReceived: "கட்டணம் செலுத்தப்பட்டது",
-              paymentReceivedSub: "புஷ் மட்டும்",
-              weeklySummary: "வாராந்திர சுருக்கம்",
-              weeklySummarySub: "மின்னஞ்சல்",
-              
-              cancel: "ரத்து செய்",
-              saveChanges: "மாற்றங்களைச் சேமி",
-              
-              // Change Password
-              currentPassword: "தற்போதைய கடவுச்சொல்",
-              newPassword: "புதிய கடவுச்சொல்",
-              confirmNewPassword: "புதிய கடவுச்சொல்லை உறுதிப்படுத்தவும்",
-              updatePassword: "கடவுச்சொல்லைப் புதுப்பி",
-              passwordPrompt: "உங்கள் கணக்கைப் பாதுகாக்க உங்கள் கடவுச்சொல்லைப் புதுப்பிக்கவும்",
-              
-              // Language & Region
-              interfaceLanguage: "இடைமுக மொழி",
-              timezone: "நேர மண்டலம்",
-              systemCurrency: "முறைமை நாணயம்",
-              localizationSub: "குடியிருப்பு மொழி விருப்பங்கள் மற்றும் நேர மண்டல மாறிகளை உள்ளமைக்கவும்",
-              
-              // Security & Sessions
-              securitySub: "சாதன அணுகல் உள்ளீடுகள் மற்றும் பல காரணி கணினி உள்ளமைவுகளை தணிக்கை செய்யவும்",
-              activeNow: "இப்போது செயலில் உள்ளது",
-              mfaHeader: "இரண்டாம் நிலை MFA அங்கீகார கேட்",
-              mfaSub: "நிர்வாகி உள்நுழைவின் போது மாறும் அங்கீகாரக் குறியீடு சவாலை செயல்படுத்துகிறது.",
-              setupMfa: "2FA ஐ அமை",
-              
-              // Help & Support
-              helpSub: "அடிக்கடி கேட்கப்படும் கேள்விகளைத் தேடி, உருவாக்குநர்களுடன் இணையுங்கள்",
-              helpIntro: "EcoTrack அம்சங்களில் உதவி தேவையா? நிலையான பயனர் கையேடுகளை ஆராய்ந்து அல்லது டிக்கெட்டைப் பதிவு செய்யவும்:",
-              faq1: "வீட்டு உபயோக QR குறியீடுகளை எவ்வாறு உருவாக்குவது?",
-              faq2: "கழிவுகளை பிரிக்காத அபராதங்களை நான் எங்கே சரிசெய்வது?",
-              faq3: "மாதாந்திர சேகரிப்பு அறிக்கைகளை எவ்வாறு காப்பகப்படுத்துவது?",
-              contactDev: "உருவாக்குநர் ஆதரவைத் தொடர்பு கொள்ளவும்",
-              contactDetails: "எங்கள் ஆதரவு சேனல் 24/7 இல் support@ecotrack.org அல்லது நிலையான ஹாட்லைன்கள் மூலம் அணுகக்கூடியதாக இருக்கும்."
-            }
-          };
           const t = settingsTranslations[interfaceLanguage] || settingsTranslations.english;
           return (
             <div className="space-y-6 text-left animate-in fade-in duration-200" id="settings-tab-view">
@@ -10101,6 +10150,77 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        )}
+
+        {/* VIEW ALL ACTIVITIES MODAL */}
+        {isActivityLogModalOpen && (
+          <div className="fixed inset-0 bg-slate-950/65 backdrop-blur-xs flex items-center justify-center p-4 z-50 overflow-y-auto animate-in fade-in duration-200" id="activity-log-modal-overlay">
+            <div className="bg-white border border-[#E2E8F0] rounded-3xl w-full max-w-2xl p-6 relative shadow-2xl animate-in fade-in zoom-in duration-250" id="activity-log-modal-container">
+              {/* HEADER */}
+              <div className="flex justify-between items-start mb-6 border-b border-gray-100 pb-4">
+                <div>
+                  <h3 className="text-base font-black text-[#164121] flex items-center gap-2">
+                    <ClipboardList className="w-5 h-5 text-emerald-600" />
+                    <span>System Activity Log</span>
+                  </h3>
+                  <p className="text-xs text-gray-400 font-extrabold tracking-tight">Full chronological history of operational tasks, incidents, and payments</p>
+                </div>
+                <button 
+                  type="button" 
+                  onClick={() => setIsActivityLogModalOpen(false)}
+                  className="p-1.5 text-gray-400 hover:text-gray-900 rounded-xl hover:bg-slate-50 transition-all cursor-pointer"
+                  title="Close"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* LIST */}
+              <div className="max-h-[400px] overflow-y-auto divide-y divide-gray-100 pr-2">
+                {activities.length > 0 ? (
+                  activities.map((item) => (
+                    <div key={item.id} className="py-3 flex justify-between items-center group transition-colors first:pt-0">
+                      <div className="flex items-center gap-4">
+                        <div className={`p-2 rounded-xl shrink-0 ${
+                          item.type === 'scan' ? 'bg-[#E8F5E9] text-[#2E7D32]' :
+                          item.type === 'done' ? 'bg-[#E8F5E9] text-emerald-800' :
+                          item.type === 'issue' ? 'bg-red-50 text-red-600' :
+                          item.type === 'payment' ? 'bg-[#E8F5E9]/80 text-emerald-700' : 'bg-[#E8F5E9]/50 text-[#2E7D32]'
+                        }`}>
+                          {item.type === 'scan' && <QrCode className="w-4 h-4" />}
+                          {item.type === 'done' && <CheckCircle className="w-4 h-4" />}
+                          {item.type === 'issue' && <AlertTriangle className="w-4 h-4" />}
+                          {item.type === 'payment' && <Landmark className="w-4 h-4" />}
+                          {item.type === 'resident' && <Users className="w-4 h-4" />}
+                        </div>
+                        <div>
+                          <p className="text-xs font-bold text-gray-800 leading-relaxed group-hover:text-gray-900">
+                            {item.text}
+                          </p>
+                        </div>
+                      </div>
+                      <span className="text-[10px] font-bold text-gray-400 tracking-tight whitespace-nowrap ml-4">
+                        {formatActivityTime(item.timestamp)}
+                      </span>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-xs text-gray-400 font-bold text-center py-8">No activities recorded in the system.</p>
+                )}
+              </div>
+
+              {/* FOOTER */}
+              <div className="flex justify-end pt-4 border-t border-gray-105 mt-6">
+                <button
+                  type="button"
+                  onClick={() => setIsActivityLogModalOpen(false)}
+                  className="px-5 py-2 bg-[#2E7D32] hover:bg-[#1E562F] text-white text-xs font-black rounded-xl transition-all cursor-pointer shadow-xs leading-none"
+                >
+                  Close
+                </button>
+              </div>
             </div>
           </div>
         )}
