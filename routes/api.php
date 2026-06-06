@@ -64,6 +64,8 @@ Route::middleware('auth:sanctum')->group(function () {
         // Payments & Billing Trackers
         Route::get('/admin/payments', [\App\Http\Controllers\AdminController::class, 'payments']);
         Route::post('/admin/payments/generate-monthly', [\App\Http\Controllers\AdminController::class, 'generateMonthlyBills']);
+        Route::post('/admin/payments/{id}/mark-paid', [\App\Http\Controllers\AdminController::class, 'markPaymentPaid']);
+        Route::delete('/admin/payments/{id}', [\App\Http\Controllers\AdminController::class, 'deletePayment']);
         
         // Complaints Handling
         Route::get('/admin/complaints', [\App\Http\Controllers\AdminController::class, 'complaints']);

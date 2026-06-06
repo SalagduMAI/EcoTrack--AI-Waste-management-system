@@ -15,6 +15,7 @@ interface ResidentPortalProps {
   token: string;
   user?: any;
   onLogout: () => void;
+  onUserUpdate?: (freshUser: any) => void;
 }
 
 interface ChatMessage {
@@ -27,7 +28,7 @@ interface ChatMessage {
   isUnsure?: boolean;
 }
 
-export default function ResidentPortal({ token, user, onLogout }: ResidentPortalProps) {
+export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: ResidentPortalProps) {
   const [activeTab, setActiveTab] = useState<'home' | 'history' | 'bulk' | 'billing' | 'chatbot' | 'complaints' | 'notifications' | 'profile'>('home');
   const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
@@ -79,17 +80,59 @@ export default function ResidentPortal({ token, user, onLogout }: ResidentPortal
     return `${parts[0]} ${parts[parts.length - 1][0]}.`;
   };
 
-  const handleProfilePicChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleProfilePicChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      // Optimistic local preview update
       const reader = new FileReader();
       reader.onloadend = () => {
         if (typeof reader.result === 'string') {
           setProfileImage(reader.result);
-          setMessage("Profile picture changed successfully! 🌿");
         }
       };
       reader.readAsDataURL(file);
+
+      setActionLoading(true);
+      setMessage(null);
+      try {
+        const formData = new FormData();
+        formData.append('photo', file);
+
+        const response = await fetch('/api/profile/photo', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Accept': 'application/json'
+          },
+          body: formData
+        });
+
+        const data = await response.json();
+        if (response.ok && data.status === 'success') {
+          const freshPhotoUrl = data.data.profile_photo_url;
+          const finalUrl = freshPhotoUrl.startsWith('http') 
+            ? new URL(freshPhotoUrl).pathname 
+            : freshPhotoUrl;
+
+          setProfileImage(finalUrl);
+
+          if (user && onUserUpdate) {
+            onUserUpdate({
+              ...user,
+              profile_photo_url: finalUrl
+            });
+          }
+          setMessage("Profile picture changed and saved successfully! 🌿");
+        } else {
+          console.error("Failed to upload profile photo:", data);
+          setMessage(`Upload failed: ${data.message || 'Validation error'}`);
+        }
+      } catch (err) {
+        console.error("Error uploading profile photo:", err);
+        setMessage("Connection error. Profile picture could not be saved to server.");
+      } finally {
+        setActionLoading(false);
+      }
     }
   };
   
@@ -532,18 +575,35 @@ export default function ResidentPortal({ token, user, onLogout }: ResidentPortal
   });
 
   // Chatbot states
-  const [ecoBotView, setEcoBotView] = useState<'welcome' | 'active' | 'error'>('welcome');
+  const [ecoBotView, setEcoBotView] = useState<'welcome' | 'active' | 'error'>('active');
   const [recentConversations, setRecentConversations] = useState<{
     id: string;
     title: string;
     active: boolean;
     time: string;
     messages: ChatMessage[];
-  }[]>([]);
+  }[]>([
+    {
+      id: 'default-session',
+      title: 'Eco-Bot Chat',
+      active: true,
+      time: 'Now',
+      messages: [
+        {
+          id: 'bot-init',
+          sender: 'bot' as const,
+          text: "Hi " + (user?.name ? user.name.split(' ')[0] : 'Resident') + "! 🌿 I'm Eco-Bot, your Greenfield Residencies system advisor. Ask me anything about waste sorting schedules, payments, or complaints.",
+          confidence: 100
+        }
+      ]
+    }
+  ]);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [botInput, setBotInput] = useState('');
   const chatBottomRef = useRef<HTMLDivElement>(null);
   const [botTyping, setBotTyping] = useState(false);
+  const [chatSearchQuery, setChatSearchQuery] = useState('');
+  const [currentTipIndex, setCurrentTipIndex] = useState(0);
 
   // Billing states
   const [payments, setPayments] = useState<any[]>([]);
@@ -756,8 +816,6 @@ export default function ResidentPortal({ token, user, onLogout }: ResidentPortal
       if (activeConv) {
         setChatMessages(activeConv.messages);
       }
-    } else if (ecoBotView === 'welcome') {
-      setChatMessages([]);
     } else if (ecoBotView === 'error') {
       setChatMessages([
         { id: 'err-1', sender: 'user', text: "How do I dispose of batteries?" },
@@ -781,11 +839,11 @@ export default function ResidentPortal({ token, user, onLogout }: ResidentPortal
     setBotInput('');
     setBotTyping(true);
 
-    // If currently in welcome view or no active conversation, create one
+    // If currently no active conversation, create one
     let currentActiveId = '';
     const activeConv = recentConversations.find(c => c.active);
 
-    if (ecoBotView === 'welcome' || !activeConv) {
+    if (!activeConv) {
       const newId = 'conv-' + Date.now();
       currentActiveId = newId;
       const newConvTitle = userText.length > 28 ? userText.substring(0, 25) + '...' : userText;
@@ -840,8 +898,8 @@ export default function ResidentPortal({ token, user, onLogout }: ResidentPortal
         isUnsure = true;
         confidence = 54;
       } else if (response.ok && data.status === 'success') {
-        botReplyText = data.data.reply;
-        logId = data.data.log_id;
+        botReplyText = data.response || data.data?.reply || data.reply || "I'm sorry, I couldn't process that.";
+        logId = data.log_id || data.data?.log_id;
       } else {
         botReplyText = "Organic foods scraps go into composting bins. Recycle clean plastics separately under Greenfield instructions!";
       }
@@ -1307,11 +1365,9 @@ export default function ResidentPortal({ token, user, onLogout }: ResidentPortal
             ) : activeTab === 'chatbot' ? (
               <div>
                 <span className="text-[10px] font-black text-gray-400 block tracking-wider font-sans uppercase">
-                  {ecoBotView === 'active' 
-                    ? 'AI assistant · Powered by Gemini' 
-                    : ecoBotView === 'welcome' 
-                    ? 'AI assistant - Always free' 
-                    : 'Connection error'}
+                  {ecoBotView === 'error' 
+                    ? 'Connection error' 
+                    : 'AI assistant · Powered by Gemini'}
                 </span>
                 <h1 className="text-xl md:text-2xl font-black text-[#1E4D2B] tracking-tight mt-0.5">
                   Eco-Bot
@@ -3806,368 +3862,378 @@ export default function ResidentPortal({ token, user, onLogout }: ResidentPortal
                     </tbody>
                   </table>
                 </div>
-
               </div>
-
             </div>
           )}
+               {/* TAB 5: CHATBOT ECO-BOT FEED */}
+          {activeTab === 'chatbot' && (() => {
+            // Search filtering of conversations
+            const filteredConversations = recentConversations.filter(c => 
+              c.title.toLowerCase().includes(chatSearchQuery.toLowerCase()) ||
+              c.messages.some(m => m.text.toLowerCase().includes(chatSearchQuery.toLowerCase()))
+            );
 
-          {/* TAB 5: CHATBOT ECO-BOT FEED */}
-          {activeTab === 'chatbot' && (
-            <div className="space-y-4 max-w-6xl mx-auto w-full text-left font-sans" id="chatbot-tab-view">
+            // Premium helper to format bot responses including markdown bold, custom bullets and code blocks
+            const renderFormattedText = (text: string) => {
+              if (!text) return null;
+              
+              const codeBlockRegex = /```([\s\S]*?)```/g;
+              const parts: { type: 'text' | 'code'; content: string }[] = [];
+              let lastIndex = 0;
+              let match;
+              
+              while ((match = codeBlockRegex.exec(text)) !== null) {
+                if (match.index > lastIndex) {
+                  parts.push({ type: 'text', content: text.substring(lastIndex, match.index) });
+                }
+                parts.push({ type: 'code', content: match[1].trim() });
+                lastIndex = codeBlockRegex.lastIndex;
+              }
+              
+              if (lastIndex < text.length) {
+                parts.push({ type: 'text', content: text.substring(lastIndex) });
+              }
+              
+              if (parts.length === 0) {
+                parts.push({ type: 'text', content: text });
+              }
 
-              {/* MAIN RE-ENGINEERED CONTAINER GRID */}
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
+              return parts.map((part, pIdx) => {
+                if (part.type === 'code') {
+                  return (
+                    <div key={pIdx} className="my-3 font-mono text-[11px] bg-slate-900 text-emerald-400 p-3 rounded-xl border border-slate-800 shadow-inner relative group select-text">
+                      <pre className="overflow-x-auto whitespace-pre-wrap">{part.content}</pre>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(part.content);
+                          setMessage("Code copied to clipboard! 📋");
+                        }}
+                        className="absolute top-2 right-2 px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-gray-400 hover:text-white transition-colors text-[9px] font-black uppercase tracking-wider cursor-pointer"
+                      >
+                        Copy
+                      </button>
+                    </div>
+                  );
+                }
                 
-                {/* LEFT CONVERSATION LIST PANEL (Only visible in active chat view, or matches Screenshot 1) */}
-                <div className={`lg:col-span-4 bg-white border border-gray-150 rounded-3xl p-5 flex flex-col justify-between shadow-xs transition-with duration-205 ${
-                  ecoBotView === 'active' ? 'block' : 'hidden lg:flex'
-                }`}>
-                  <div className="space-y-5">
-                    {/* Bot profile in list header */}
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-[#EBFDF2] text-emerald-800 flex items-center justify-center relative shadow-sm border border-emerald-100/45">
-                        <Bot className="w-5.5 h-5.5 text-[#1E4D2B]" />
-                        <span className="absolute bottom-0.5 right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-white"></span>
+                const lines = part.content.split('\n');
+                return lines.map((line, idx) => {
+                  let cleanLine = line.trim();
+                  if (!cleanLine) return null;
+                  
+                  const isBullet = cleanLine.startsWith('-') || cleanLine.startsWith('*') || (cleanLine.match(/^\d+\./) !== null);
+                  if (isBullet) {
+                    cleanLine = cleanLine.replace(/^[-*\d.]+\s*/, '');
+                  }
+                  
+                  const textParts = cleanLine.split(/\*\*([^*]+)\*\*/g);
+                  const parsedLine = textParts.map((subpart, spIdx) => {
+                    return spIdx % 2 === 1 ? (
+                      <strong key={spIdx} className="font-extrabold text-emerald-950 bg-emerald-50/70 px-1 rounded border border-emerald-100/50">
+                        {subpart}
+                      </strong>
+                    ) : subpart;
+                  });
+                  
+                  if (isBullet) {
+                    return (
+                      <div key={`${pIdx}-${idx}`} className="flex items-start gap-2.5 ml-2.5 my-2 animate-in slide-in-from-left-1 duration-150">
+                        <span className="w-5 h-5 rounded-full bg-emerald-50 border border-emerald-100 flex items-center justify-center shrink-0 mt-0.5 shadow-3xs">
+                          <Leaf className="w-3 h-3 text-emerald-600" />
+                        </span>
+                        <p className="leading-relaxed text-gray-700 text-[11.5px] font-semibold flex-1 pt-0.5 text-left">{parsedLine}</p>
                       </div>
-                      <div>
-                        <h4 className="text-xs font-black text-gray-905 leading-none">Eco-Bot</h4>
-                        <span className="text-[10px] text-emerald-700 font-extrabold flex items-center gap-1 mt-1">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                          Online
+                    );
+                  }
+                  
+                  return (
+                    <p key={`${pIdx}-${idx}`} className="leading-relaxed my-2 text-gray-700 text-[11.5px] font-semibold text-left">
+                      {parsedLine}
+                    </p>
+                  );
+                });
+              });
+            };
+
+            return (
+              <div className="max-w-6xl mx-auto w-full" id="chatbot-tab-outer">
+                
+                                {/* SINGLE UNIFIED SCROLLABLE CARD CONTAINER */}
+                <div className="bg-[#FAFDFB] border border-gray-200 rounded-3xl shadow-xs overflow-hidden flex flex-col h-[600px] w-full text-left font-sans animate-in fade-in duration-200" id="chatbot-tab-view">
+                  
+                  {/* RIGHT CHAT AREA (Body viewport) */}
+                  <div className="flex-1 flex flex-col bg-white overflow-hidden relative">
+                    
+                                        {/* PREMIUM CHAT AREA HEADER */}
+                    <div className="px-5 py-3.5 border-b border-slate-100 bg-white flex items-center justify-between shrink-0">
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-100 to-emerald-50 text-emerald-800 flex items-center justify-center border border-emerald-200/50 shadow-3xs">
+                          <Bot className="w-5 h-5 text-[#1E4D2B]" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h3 className="text-xs font-black text-gray-900 font-sans tracking-tight">Eco-Bot Assistant</h3>
+                            <span className="px-1.5 py-0.5 rounded bg-emerald-50 border border-emerald-250/50 text-[8px] font-black text-emerald-700 uppercase tracking-wider">SECURE LINK</span>
+                          </div>
+                          <p className="text-[9.5px] text-gray-400 font-bold block mt-0.5 text-left">Answers only waste sorting, schedules, payments & complaints queries.</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const newId = 'conv-' + Date.now();
+                            const newConv = {
+                              id: newId,
+                              title: 'Reset Chat Session',
+                              active: true,
+                              time: 'Now',
+                              messages: [
+                                {
+                                  id: 'bot-init-' + Date.now(),
+                                  sender: 'bot' as const,
+                                  text: "Hi " + (profileName ? profileName.split(' ')[0] : 'Resident') + "! 🌿 I'm Eco-Bot, your Greenfield Residencies system advisor. Ask me anything about waste sorting schedules, payments, or complaints.",
+                                  confidence: 100
+                                }
+                              ]
+                            };
+                            setRecentConversations(prev => [newConv, ...prev.map(c => ({ ...c, active: false }))]);
+                            setEcoBotView('active');
+                            setMessage('Chat session restarted. Type your query directly. 🌿');
+                          }}
+                          className="px-3 py-1.5 border border-slate-200 hover:border-emerald-300 hover:bg-[#F4F8F5] text-gray-500 hover:text-[#1E4D2B] bg-white font-extrabold rounded-lg tracking-tight select-none cursor-pointer text-xs transition-all flex items-center gap-1.5 shrink-0 shadow-3xs active:scale-95"
+                          title="Restart Chat Session"
+                        >
+                          <RefreshCw className="w-3.5 h-3.5 text-gray-400" />
+                          <span>New Session</span>
+                        </button>
+                        <div className="flex items-center gap-1.5 bg-emerald-50 border border-emerald-200/30 px-2.5 py-1 rounded-full">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                          <span className="text-[8.5px] text-emerald-700 font-black uppercase tracking-widest">Active</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* CONNECTION ERROR RED ALIGN TOP BANNER */}
+                    {ecoBotView === 'error' && (
+                      <div className="bg-[#FFF2F2] border-l-4 border-rose-500 py-3 px-5 flex items-start gap-3 animate-fade-in text-xs shrink-0" id="bot-connection-error-banner">
+                        <ShieldAlert className="w-4 h-4 text-rose-600 mt-0.5 shrink-0" />
+                        <div>
+                          <p className="font-extrabold text-[#991B1B] text-xs">Can't reach Eco-Bot servers</p>
+                          <p className="text-[10px] text-rose-500 font-bold mt-0.5">We'll retry automatically.</p>
+                        </div>
+                      </div>
+                    )}
+
+                                        {/* ACTIVE CHATFEED VIEWPORT AREA */}
+                    <div className="flex-1 p-5 overflow-y-auto space-y-4 font-sans text-xs flex flex-col bg-[#FDFEFC] bg-[radial-gradient(#e5ece8_1px,transparent_1px)] [background-size:16px_16px]">
+                      
+                      {/* Timestamp Pill Center */}
+                      <div className="mx-auto my-0.5">
+                        <span className="px-3 py-0.5 bg-slate-50 border border-slate-200 rounded-full font-bold text-[8.5px] uppercase text-gray-400 tracking-wider inline-block shadow-3xs">
+                          Advisory Session Context
                         </span>
                       </div>
-                    </div>
 
-                    {/* Section Title */}
-                    <div className="pt-2">
-                      <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest block">RECENT CONVERSATIONS</span>
-                      <div className="space-y-1.5 mt-3">
-                        {recentConversations.map((c) => (
-                          <button
-                            key={c.id}
-                            type="button"
-                            onClick={() => selectRecentConversation(c.id)}
-                            className={`w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold transition-all border text-left cursor-pointer ${
-                              c.active && ecoBotView === 'active'
-                                ? 'bg-[#EBFDF2] border-emerald-100 text-[#1E4D2B]'
-                                : 'bg-transparent border-transparent hover:bg-gray-55/60 text-gray-500 hover:text-gray-900'
-                            }`}
-                          >
-                            <div className="flex items-center gap-2.5 min-w-0">
-                              <MessageSquare className={`w-4 h-4 shrink-0 ${c.active && ecoBotView === 'active' ? 'text-[#1E4D2B]' : 'text-gray-400'}`} />
-                              <span className="truncate font-black">{c.title}</span>
-                            </div>
-                            <span className="text-[9.5px] text-gray-400 font-semibold shrink-0 ml-1 font-mono">{c.time}</span>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* New Chat Button */}
-                  <div className="pt-4 border-t border-gray-100">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEcoBotView('welcome');
-                        setChatMessages([]);
-                        setRecentConversations(prev => prev.map(c => ({ ...c, active: false })));
-                      }}
-                      className="w-full py-2.5 rounded-xl border border-[#1E4D2B] text-[#1E4D2B] hover:bg-emerald-50/50 text-xs font-black transition-all cursor-pointer flex items-center justify-center gap-1.5 active:scale-95"
-                    >
-                      <span>+ New chat</span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* RIGHT CHAT AREA BODY FRAME (Takes other columns) */}
-                <div className={`lg:col-span-8 bg-[#F4F8F5] border border-emerald-100/40 rounded-3xl flex flex-col h-[525px] md:h-[600px] overflow-hidden shadow-xs relative`}>
-                  
-                  {/* CONNECTION ERROR RED ALIGN TOP BANNER (Screenshot 3 Style) */}
-                  {ecoBotView === 'error' && (
-                    <div className="bg-[#FFF2F2] border-l-4 border-rose-500 py-3.5 px-5 flex items-start gap-3 animate-fade-in text-xs shrink-0" id="bot-connection-error-banner">
-                      <ShieldAlert className="w-4 h-4 text-rose-600 mt-0.5 shrink-0" />
-                      <div>
-                        <p className="font-extrabold text-[#991B1B] text-xs">Can't reach Eco-Bot servers</p>
-                        <p className="text-[10px] text-rose-500 font-bold mt-0.5">We'll retry automatically.</p>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* DEFAULT / WELCOME SCREEN CONTAINER (Screenshot 2 Style) */}
-                  {ecoBotView === 'welcome' ? (
-                    <div className="flex-1 flex flex-col items-center justify-center p-6 text-center bg-[#F4F8F5]">
-                      <motion.div
-                        className="bg-white border border-gray-150 p-6 md:p-8 rounded-3xl max-w-lg w-full shadow-md space-y-6 text-center animate-in zoom-in-95 duration-200"
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                      >
-                        {/* Huge Bot Avatar */}
-                        <div className="mx-auto w-24 h-24 rounded-full bg-[#EBFDF2] text-[#1E4D2B] flex items-center justify-center shadow-xs border border-emerald-100">
-                          <Bot className="w-12 h-12 text-[#1E4D2B]" />
-                        </div>
-
-                        {/* Title Display */}
-                        <div className="space-y-2">
-                          <h3 className="text-lg md:text-xl font-black text-gray-950 font-sans tracking-tight">
-                            Hi, I'm Eco-Bot 👋
-                          </h3>
-                          <p className="text-xs text-gray-500 font-medium leading-relaxed max-w-sm mx-auto">
-                            I can help with sorting tips, collection schedules and special pickups. Pick a topic to start.
-                          </p>
-                        </div>
-
-                        {/* Shortcuts Grid from Screenshot 2 */}
-                        <div className="grid grid-cols-2 gap-3.5 pt-1">
-                          {[
-                            { id: 'sort', label: 'Sort waste', icon: RefreshCw, textQuery: 'How do I sort organic waste?' },
-                            { id: 'times', label: 'Collection times', icon: Clock, textQuery: 'What are the collection times for Block A?' },
-                            { id: 'special', label: 'Special pickup', icon: Package, textQuery: 'How can I schedule a special pickup?' },
-                            { id: 'faqs', label: 'FAQs', icon: HelpCircle, textQuery: 'Show me the common FAQs.' }
-                          ].map((sc) => {
-                            const Sci = sc.icon;
-                            return (
-                              <button
-                                key={sc.id}
-                                type="button"
-                                onClick={() => {
-                                  const customId = 'conv-' + sc.id + '-' + Date.now();
-                                  let botReplyText = "At Greenfield, trash must be sorted into Organic (green bags), Recyclables (yellow/blue bins), and Hazardous/E-Waste. Let me know if you would like to book a pick-up!";
-                                  if (sc.id === 'times') {
-                                    botReplyText = "Organic waste collection happens every Monday and Thursday morning. Plastic recycling is gathered every Wednesday. Ensure your color-coded bags are placed at standard disposal slots!";
-                                  } else if (sc.id === 'special') {
-                                    botReplyText = "You can schedule a same-week priority Special Pickup directly under our 'Special Pickup' tab or request here. Fees differ by categories (Furniture, E-waste, etc.).";
-                                  } else if (sc.id === 'faqs') {
-                                    botReplyText = "Frequently Asked Questions: \n1. Do I clean yogurt containers? Yes, rinse with tap water first.\n2. Where do metal aerosol cans go? Clean recycle bins.\n3. What if I missed my collection shift? Report under complaints!";
-                                  }
-
-                                  const newConv = {
-                                    id: customId,
-                                    title: sc.label,
-                                    active: true,
-                                    time: 'Now',
-                                    messages: [
-                                      { id: 'bot-greet', sender: 'bot' as const, text: "Hi " + (profileName ? profileName.split(' ')[0] : 'Resident') + "! 🌿 I'm Eco-Bot. Ask me anything about waste sorting, schedules or special pickups.", confidence: 98 },
-                                      { id: 'usr-trigger', sender: 'user' as const, text: sc.textQuery }
-                                    ]
-                                  };
-
-                                  setRecentConversations(prev => [newConv, ...prev.map(c => ({ ...c, active: false }))]);
-                                  setEcoBotView('active');
-
-                                  // Instantly trigger mock reply
-                                  setBotTyping(true);
-                                  setTimeout(() => {
-                                    setBotTyping(false);
-                                    setRecentConversations(prev => prev.map(c => {
-                                      if (c.id === customId) {
-                                        return {
-                                          ...c,
-                                          messages: [
-                                            ...c.messages,
-                                            { id: 'bot-reply-' + Date.now(), sender: 'bot' as const, text: botReplyText, confidence: 96 }
-                                          ]
+                      {chatMessages.map((msg, idx) => (
+                        <div 
+                          key={msg.id} 
+                          className={`flex flex-col max-w-[85%] ${msg.sender === 'user' ? 'ml-auto items-end animate-in fade-in slide-in-from-right-3' : 'mr-auto items-start animate-in fade-in slide-in-from-left-3'}`}
+                        >
+                          <div className="flex items-start gap-2 max-w-full">
+                            {msg.sender === 'bot' && (
+                              <div className="w-6.5 h-6.5 rounded-lg bg-white text-[#1E4D2B] flex items-center justify-center shadow-3xs border border-gray-155 shrink-0 mt-0.5">
+                                <Bot className="w-3.5 h-3.5 text-[#1E4D2B]" />
+                              </div>
+                            )}
+                            
+                            {/* Speech bubble */}
+                            <div className="flex flex-col">
+                              {msg.isUnsure ? (
+                                /* Low confidence card */
+                                <div className="p-4 bg-orange-50 border border-orange-200/80 rounded-2xl rounded-tl-none font-semibold shadow-3xs space-y-3 text-gray-855 text-xs md:max-w-md text-left">
+                                  <div className="flex items-center gap-1.5 text-amber-905 font-black">
+                                    <Info className="w-4 h-4 text-amber-700" />
+                                    <span>Query Escalation Option</span>
+                                  </div>
+                                  <p className="leading-relaxed text-[11px] font-bold">
+                                    I'm not fully sure how to respond to this. Do you want me to dispatch this query directly to Greenfield's supervisor?
+                                  </p>
+                                  <div className="flex gap-2 font-sans">
+                                    <button 
+                                      type="button"
+                                      onClick={() => {
+                                        setBotInput("How do I dispose of batteries?");
+                                        setMessage("Copied battery question. Type or hit Send to try querying again.");
+                                      }}
+                                      className="py-1 px-2.5 bg-white hover:bg-orange-100/40 border border-orange-200 text-orange-900 rounded-lg text-[10px] font-black transition-all cursor-pointer shadow-3xs"
+                                    >
+                                      Try again
+                                    </button>
+                                    <button 
+                                      type="button"
+                                      onClick={() => {
+                                        const mockClaim = {
+                                          id: Date.now(),
+                                          complaint_code: 'C-' + Math.floor(Math.random() * 900 + 100),
+                                          category: 'other',
+                                          description: 'Escalated Query, automatic dispatch from Eco-bot: How do I dispose of batteries safely?',
+                                          status: 'open',
+                                          created_at: new Date().toISOString()
                                         };
-                                      }
-                                      return c;
-                                    }));
-                                  }, 900);
-                                }}
-                                className="p-4 bg-[#F4F8F5] hover:bg-[#ebf4ee] border border-emerald-100 rounded-2xl flex flex-col items-center justify-center gap-2 text-center transition-all cursor-pointer hover:shadow-xs active:scale-95 group"
-                              >
-                                <div className="w-9 h-9 rounded-full bg-white flex items-center justify-center text-[#1E4D2B] shadow-2xs group-hover:scale-105 transition-transform">
-                                  <Sci className="w-4.5 h-4.5 text-[#1E4D2B]" />
+                                        setMyComplaints(prev => [mockClaim, ...prev]);
+                                        setNotifications(prev => [
+                                          {
+                                            id: 'notif-esc-' + Date.now(),
+                                            title: 'Escalation Sent ✓',
+                                            message: 'Your battery disposal query was officially dispatched to Greenfield complex supervisor for review. Status tracking code: ' + mockClaim.complaint_code,
+                                            time: 'Just now',
+                                            read: false
+                                          },
+                                          ...prev
+                                        ]);
+                                        setMessage('Dispatched ticket ' + mockClaim.complaint_code + ' directly to supervisor keys. Check complaints tab!');
+                                      }}
+                                      className="py-1 px-2.5 bg-[#1E4D2B] hover:bg-[#15341D] text-white rounded-lg text-[10px] font-black transition-all cursor-pointer flex items-center gap-1 shadow-3xs"
+                                    >
+                                      <Mail className="w-3 h-3 text-white" />
+                                      <span>Ask admin</span>
+                                    </button>
+                                  </div>
                                 </div>
-                                <span className="text-xs font-black text-[#1E4D2B]">{sc.label}</span>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </motion.div>
-                    </div>
-                  ) : (
-                    <>
-                      {/* ACTIVE CHATFEED VIEWPORT AREA */}
-                      <div className="flex-1 p-5 overflow-y-auto space-y-4 scrollbar-none font-sans text-xs flex flex-col">
-                        
-                        {/* Timestamp Pill Center */}
-                        <div className="mx-auto my-1">
-                          <span className="px-3.5 py-1 bg-white border border-gray-150 rounded-full font-bold text-[9px] uppercase text-gray-400 tracking-wider inline-block">
-                            Today · 10:42 AM
-                          </span>
-                        </div>
-
-                        {chatMessages.map((msg, idx) => (
-                          <div 
-                            key={msg.id} 
-                            className={`flex flex-col max-w-[85%] ${msg.sender === 'user' ? 'ml-auto items-end animate-in fade-in slide-in-from-right-3' : 'mr-auto items-start animate-in fade-in slide-in-from-left-3'}`}
-                          >
-                            <div className="flex items-start gap-2 max-w-full">
-                              {msg.sender === 'bot' && (
-                                <div className="w-7 h-7 rounded-full bg-white text-[#1E4D2B] flex items-center justify-center shadow-2xs border border-gray-150 shrink-0 mt-0.5">
-                                  <Bot className="w-4 h-4 text-[#1E4D2B]" />
+                              ) : (
+                                /* Clean normal speech bubble with RAG formatter helper */
+                                <div className={`p-3.5 leading-relaxed rounded-2xl shadow-3xs hover:shadow-2xs transition-shadow text-left ${
+                                  msg.sender === 'user' 
+                                    ? 'bg-gradient-to-tr from-[#1E4D2B] to-[#2B7A3E] text-white rounded-tr-none text-[11px] font-semibold border border-emerald-800/10' 
+                                    : 'bg-white text-gray-800 border border-slate-100 rounded-tl-none font-sans text-[11px] font-semibold'
+                                }`}>
+                                  {msg.sender === 'bot' ? renderFormattedText(msg.text) : msg.text}
                                 </div>
                               )}
-                              
-                              {/* Speech bubble */}
-                              <div className="flex flex-col">
-                                {msg.isUnsure ? (
-                                  /* Low confidence card from Screenshot 3 */
-                                  <div className="p-4 bg-orange-50 border border-orange-100 rounded-2xl rounded-tl-none font-semibold shadow-2xs space-y-3.5 text-gray-805 text-xs md:max-w-md">
-                                    <div className="flex items-center gap-1.5 text-amber-800 font-black">
-                                      <Info className="w-4 h-4 text-amber-700" />
-                                      <span>I'm not sure about this</span>
-                                    </div>
-                                    <p className="leading-relaxed">
-                                      Confidence below 60%. Want me to escalate this to your scheme manager?
-                                    </p>
-                                    <div className="flex gap-2 font-sans">
-                                      <button 
-                                        type="button"
-                                        onClick={() => {
-                                          setBotInput("How do I dispose of batteries?");
-                                          setMessage("Copied battery question. Type or hit Send to try querying again.");
-                                        }}
-                                        className="py-1.5 px-3 bg-white hover:bg-orange-100/40 border border-orange-200 text-orange-850 rounded-lg text-[10.5px] font-black transition-all cursor-pointer"
-                                      >
-                                        Try again
-                                      </button>
-                                      <button 
-                                        type="button"
-                                        onClick={() => {
-                                          const mockClaim = {
-                                            id: Date.now(),
-                                            complaint_code: 'C-' + Math.floor(Math.random() * 900 + 100),
-                                            category: 'other',
-                                            description: 'Escalated Query, automatic dispatch from Eco-bot: How do I dispose of batteries safely inside Block A?',
-                                            status: 'open',
-                                            created_at: new Date().toISOString()
-                                          };
-                                          setMyComplaints(prev => [mockClaim, ...prev]);
-                                          // Set notification about escalations
-                                          setNotifications(prev => [
-                                            {
-                                              id: 'notif-esc-' + Date.now(),
-                                              title: 'Escalation Sent ✓',
-                                              message: 'Your battery disposal query was officially dispatched to Greenfield complex supervisor for review. Status tracking code: ' + mockClaim.complaint_code,
-                                              time: 'Just now',
-                                              read: false
-                                            },
-                                            ...prev
-                                          ]);
-                                          setMessage('Dispatched ticket ' + mockClaim.complaint_code + ' directly to supervisor keys. Check complaints tab!');
-                                        }}
-                                        className="py-1.5 px-3 bg-[#1E4D2B] hover:bg-[#15341D] text-white rounded-lg text-[10.5px] font-black transition-all cursor-pointer flex items-center gap-1"
-                                      >
-                                        <Mail className="w-3 h-3 text-white" />
-                                        <span>Ask admin</span>
-                                      </button>
-                                    </div>
-                                  </div>
-                                ) : (
-                                  /* Clean normal speech bubble */
-                                  <div className={`p-4.5 leading-relaxed rounded-2xl font-semibold shadow-2xs ${
-                                    msg.sender === 'user' 
-                                      ? 'bg-[#1E4D2B] text-white rounded-tr-none' 
-                                      : 'bg-white text-gray-700 border border-gray-150 rounded-tl-none font-sans text-xs'
-                                  }`}>
-                                    {msg.text}
-                                  </div>
-                                )}
 
-                                {/* Confidence Score matching screenshots */}
-                                {msg.sender === 'bot' && !msg.isUnsure && (
-                                  <div className="flex items-center gap-1 mt-1 text-[9.5px] font-bold text-emerald-800 ml-1">
-                                    <Check className="w-3 h-3 text-emerald-600 stroke-[3]" />
+                              {/* Confidence & Feedback Rating Row */}
+                              {msg.sender === 'bot' && !msg.isUnsure && (
+                                <div className="flex items-center justify-between mt-1 px-1">
+                                  <div className="flex items-center gap-1.5 text-[9px] font-bold text-emerald-800/80 bg-emerald-50/50 border border-emerald-100/35 px-1.5 py-0.5 rounded-full">
+                                    <Check className="w-2.5 h-2.5 text-emerald-600 stroke-[3.5]" />
                                     <span>{msg.confidence || (idx === 0 ? 98 : 92)}% confident</span>
                                   </div>
-                                )}
-                              </div>
+
+                                  {/* Thumbs up / down feedback logs */}
+                                  {msg.logId && (
+                                    <div className="flex items-center gap-1.5 select-none bg-white border border-slate-100 rounded-full px-1.5 py-0.5 shadow-3xs">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleRateBotLog(idx, msg.logId!, true)}
+                                        className={`p-0.5 rounded-full transition-all cursor-pointer hover:bg-slate-50 ${
+                                          msg.selectedFeedback === 'helpful' ? 'text-emerald-700 bg-emerald-50/75' : 'text-gray-400 hover:text-gray-650'
+                                        }`}
+                                        title="Helpful response"
+                                      >
+                                        <ThumbsUp className="w-2.5 h-2.5 stroke-[2.5]" />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleRateBotLog(idx, msg.logId!, false)}
+                                        className={`p-0.5 rounded-full transition-all cursor-pointer hover:bg-slate-50 ${
+                                          msg.selectedFeedback === 'not_helpful' ? 'text-rose-600 bg-rose-50/75' : 'text-gray-400 hover:text-gray-650'
+                                        }`}
+                                        title="Unhelpful response"
+                                      >
+                                        <ThumbsDown className="w-2.5 h-2.5 stroke-[2.5]" />
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
                             </div>
                           </div>
-                        ))}
+                        </div>
+                      ))}
 
-                        {/* Bot is currently typing bubble matching Screenshot 1 */}
-                        {botTyping && (
-                          <div className="flex items-start gap-2 mr-auto max-w-[85%] animate-pulse">
-                            <div className="w-7 h-7 rounded-full bg-white text-[#1E4D2B] flex items-center justify-center shadow-2xs border border-gray-150 shrink-0 mt-0.5">
-                              <Bot className="w-4 h-4 text-[#1E4D2B]" />
-                            </div>
-                            <div className="py-3 px-5 bg-white text-gray-400 border border-gray-150 rounded-2xl rounded-tl-none font-extrabold flex gap-1 items-center font-mono">
-                              <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce delay-100"></span>
-                              <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce delay-200"></span>
-                              <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce delay-300"></span>
-                            </div>
+                      {/* Bot is currently typing bubble */}
+                      {botTyping && (
+                        <div className="flex items-start gap-2 mr-auto max-w-[85%] animate-pulse">
+                          <div className="w-6.5 h-6.5 rounded-lg bg-white text-[#1E4D2B] flex items-center justify-center shadow-3xs border border-gray-155 shrink-0 mt-0.5">
+                            <Bot className="w-3.5 h-3.5 text-[#1E4D2B]" />
                           </div>
-                        )}
+                          <div className="py-2 px-3.5 bg-white text-gray-400 border border-gray-150 rounded-2xl rounded-tl-none font-bold flex gap-1 items-center font-mono shadow-3xs">
+                            <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-bounce delay-100"></span>
+                            <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-bounce delay-200"></span>
+                            <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-bounce delay-300"></span>
+                          </div>
+                        </div>
+                      )}
 
-                        <div ref={chatBottomRef} />
-                      </div>
+                      <div ref={chatBottomRef} />
+                    </div>
 
-                      {/* QUICK SUGGESTION CHIPS FROM SCREENSHOT 1 & 3 */}
-                      <div className="px-5 pb-3 flex flex-wrap gap-1.5 items-center justify-start z-10">
-                        {[
-                          { label: "When's next pickup?", query: "When is the next pickup?" },
-                          { label: 'Sort plastics', query: 'What are the rules for sorting plastics?' },
-                          { label: 'Request special pickup', query: 'I want to schedule a special sofa pickup.' },
-                          { label: 'Talk to admin', query: "Please connect me to Greenfield housing admin." }
-                        ].map((chip) => (
-                          <button
-                            key={chip.label}
-                            type="button"
-                            onClick={() => {
-                              setBotInput(chip.query);
-                              setMessage(`Copied suggestion. Hit Enter/Send to query!`);
-                            }}
-                            className="py-1.5 px-3.5 bg-white hover:bg-[#EBFDF2]/60 border border-emerald-100/40 text-[#1E4D2B] font-extrabold rounded-full text-[10.5px] text-left transition-all active:scale-95 cursor-pointer shadow-3xs"
-                          >
-                            {chip.label}
-                          </button>
-                        ))}
-                      </div>
-                    </>
-                  )}
+                    {/* MESSAGE INPUT CONTAINER ROW */}
+                    <div className="p-4 border-t border-slate-100 bg-[#FAFDFB]/60 shrink-0">
+                      <form onSubmit={handleChatSend} className="flex items-center gap-2 max-w-5xl mx-auto bg-white border border-slate-205 rounded-xl p-1.5 shadow-3xs focus-within:border-emerald-500 focus-within:ring-2 focus-within:ring-emerald-500/10 transition-all">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const newId = 'conv-' + Date.now();
+                            const newConv = {
+                              id: newId,
+                              title: 'Reset Chat Session',
+                              active: true,
+                              time: 'Now',
+                              messages: [
+                                {
+                                  id: 'bot-init-' + Date.now(),
+                                  sender: 'bot' as const,
+                                  text: "Hi " + (profileName ? profileName.split(' ')[0] : 'Resident') + "! 🌿 I'm Eco-Bot, your Greenfield Residencies system advisor. Ask me anything about waste sorting schedules, payments, or complaints.",
+                                  confidence: 100
+                                }
+                              ]
+                            };
+                            setRecentConversations(prev => [newConv, ...prev.map(c => ({ ...c, active: false }))]);
+                            setEcoBotView('active');
+                            setMessage('Chat session restarted. Type your query directly. 🌿');
+                          }}
+                          className="w-8 h-8 rounded-lg border border-slate-200 flex items-center justify-center text-gray-400 hover:text-[#1E4D2B] hover:border-emerald-355 bg-white transition-all cursor-pointer shrink-0 active:scale-90 shadow-3xs hover:rotate-90"
+                          title="Restart Chat Session"
+                        >
+                          <RefreshCw className="w-3.5 h-3.5 text-gray-400 hover:text-emerald-700 transition-colors" />
+                        </button>
 
-                  {/* MESSAGE INPUT CONTAINER ROW (Matches Screenshot 1 layout) */}
-                  <form onSubmit={handleChatSend} className="p-4 border-t border-gray-150 bg-white flex items-center gap-3">
-                    {/* Circular outline + button */}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEcoBotView('welcome');
-                        setChatMessages([]);
-                        setRecentConversations(prev => prev.map(c => ({ ...c, active: false })));
-                        setMessage('Conversational tree reset. Click on suggestions or start writing.');
-                      }}
-                      className="w-10 h-10 rounded-full border border-gray-200/80 flex items-center justify-center text-gray-400 hover:text-emerald-700 hover:border-emerald-300 bg-white transition-all cursor-pointer shrink-0"
-                      title="Reset Chat"
-                    >
-                      <span className="text-xl font-bold leading-none mt-[-2px] text-gray-400">+</span>
-                    </button>
+                        <input
+                          type="text"
+                          value={botInput}
+                          onChange={(e) => setBotInput(e.target.value)}
+                          placeholder="Ask about waste sorting rules, pickup times, pending levies or logs..."
+                          className="flex-1 bg-transparent text-gray-800 text-xs focus:outline-none font-semibold px-2 py-1"
+                        />
+                        
+                        <button 
+                          type="button"
+                          className="w-7 h-7 rounded-lg flex items-center justify-center text-gray-400 hover:text-[#1E4D2B] transition-colors cursor-pointer select-none text-xs"
+                          title="Scope: Greenfield System only"
+                        >
+                          🔒
+                        </button>
 
-                    <input
-                      type="text"
-                      value={botInput}
-                      onChange={(e) => setBotInput(e.target.value)}
-                      placeholder="Ask about waste, schedule or start typing raw question..."
-                      className="flex-1 bg-gray-50 border border-gray-200 text-gray-800 rounded-full px-4.5 py-3 text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#1E4D2B]/20 transition-all font-semibold"
-                    />
-                    <button 
-                      type="submit"
-                      className="bg-[#1E4D2B] hover:bg-[#15341D] text-white py-2.5 px-5 rounded-full transition-all cursor-pointer inline-flex items-center gap-1.5 shrink-0 shadow-md text-xs font-black active:scale-95"
-                    >
-                      <SendHorizontal className="w-3.5 h-3.5 text-white" />
-                      <span>Send</span>
-                    </button>
-                  </form>
+                        <button 
+                          type="submit"
+                          className="bg-gradient-to-r from-emerald-800 to-emerald-700 hover:from-emerald-700 hover:to-emerald-600 text-white p-2 rounded-lg transition-all cursor-pointer flex items-center justify-center shrink-0 shadow-md active:scale-95"
+                        >
+                          <Send className="w-3.5 h-3.5 text-white" />
+                        </button>
+                      </form>
+                    </div>
+
+                  </div>
 
                 </div>
 
               </div>
+            );
+          })()}
 
-            </div>
-          )}
 
           {/* TAB 6: COMPLAINTS & GRIEVANCE DECK */}
           {activeTab === 'complaints' && (
@@ -5254,7 +5320,7 @@ export default function ResidentPortal({ token, user, onLogout }: ResidentPortal
                       </div>
 
                       <form 
-                        onSubmit={(e) => {
+                        onSubmit={async (e) => {
                           e.preventDefault();
                           const data = new FormData(e.currentTarget);
                           const newName = data.get('fullname') as string;
@@ -5264,15 +5330,51 @@ export default function ResidentPortal({ token, user, onLogout }: ResidentPortal
                           const newBlock = data.get('block') as string;
                           const newFloor = data.get('floor') as string;
 
-                          if (newName) setProfileName(newName);
-                          if (newPhone) setProfilePhone(newPhone);
-                          if (newEmail) setProfileEmail(newEmail);
-                          if (newUnit) setProfileUnit(newUnit);
-                          if (newBlock) setProfileBlock(newBlock);
-                          if (newFloor) setProfileFloor(newFloor);
+                          setActionLoading(true);
+                          setMessage(null);
+                          try {
+                            const response = await fetch('/api/profile/update', {
+                              method: 'POST',
+                              headers: {
+                                'Authorization': `Bearer ${token}`,
+                                'Accept': 'application/json',
+                                'Content-Type': 'application/json'
+                              },
+                              body: JSON.stringify({
+                                name: newName,
+                                phone: newPhone
+                              })
+                            });
 
-                          setActiveProfileModal(null);
-                          setMessage("Profile specifications updated successfully! 🌿");
+                            const resData = await response.json();
+                            if (response.ok && resData.status === 'success') {
+                              if (newName) setProfileName(newName);
+                              if (newPhone) setProfilePhone(newPhone);
+                              if (newEmail) setProfileEmail(newEmail);
+                              if (newUnit) setProfileUnit(newUnit);
+                              if (newBlock) setProfileBlock(newBlock);
+                              if (newFloor) setProfileFloor(newFloor);
+
+                              if (user && onUserUpdate) {
+                                onUserUpdate({
+                                  ...user,
+                                  name: newName,
+                                  phone: newPhone,
+                                  email: newEmail
+                                });
+                              }
+                              setActiveProfileModal(null);
+                              setMessage("Profile details saved and synchronized successfully! 🌿");
+                            } else {
+                              console.error("Failed to save profile bio details:", resData);
+                              setMessage(`Error: ${resData.message || 'Could not save profile details.'}`);
+                            }
+                          } catch (err) {
+                            console.error("Error saving profile details:", err);
+                            setMessage("Connection error. Profile details could not be saved to server.");
+                          } finally {
+                            setActionLoading(false);
+                          }
                         }} 
                         className="space-y-4 text-xs font-semibold text-gray-700"
                       >
@@ -5285,18 +5387,7 @@ export default function ResidentPortal({ token, user, onLogout }: ResidentPortal
                             <label className="text-[10px] text-emerald-800 font-bold uppercase tracking-wider block">Profile Photo</label>
                             <input 
                               type="file" 
-                              onChange={(e) => {
-                                const file = e.target.files?.[0];
-                                if (file) {
-                                  const reader = new FileReader();
-                                  reader.onloadend = () => {
-                                    if (typeof reader.result === 'string') {
-                                      setProfileImage(reader.result);
-                                    }
-                                  };
-                                  reader.readAsDataURL(file);
-                                }
-                              }} 
+                              onChange={handleProfilePicChange} 
                               accept="image/*"
                               className="block w-full text-[11px] text-gray-500 file:mr-3 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:text-[11px] file:font-bold file:bg-[#1E4D2B] file:text-white hover:file:bg-[#256037] cursor-pointer"
                             />

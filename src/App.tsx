@@ -70,7 +70,7 @@ function AppContent({
           !token ? (
             <Login onLoginSuccess={handleLoginSuccess} />
           ) : (
-            <Navigate to={user.role === 'admin' ? '/admin' : user.role === 'worker' ? '/worker' : '/resident'} replace />
+            <Navigate to={user?.role === 'admin' ? '/admin' : user?.role === 'worker' ? '/worker' : '/resident'} replace />
           )
         }
       />
@@ -106,7 +106,15 @@ function AppContent({
         path="/resident"
         element={
           token && user && user.role === 'resident' ? (
-            <ResidentPortal token={token} user={user} onLogout={handleLogout} />
+            <ResidentPortal 
+              token={token} 
+              user={user} 
+              onLogout={handleLogout} 
+              onUserUpdate={(freshUser) => {
+                setUser(freshUser);
+                localStorage.setItem('ecotrack_user_profile', JSON.stringify(freshUser));
+              }}
+            />
           ) : (
             <Navigate to="/login" replace />
           )
@@ -119,7 +127,7 @@ function AppContent({
           !token ? (
             <Navigate to="/login" replace />
           ) : (
-            <Navigate to={user.role === 'admin' ? '/admin' : user.role === 'worker' ? '/worker' : '/resident'} replace />
+            <Navigate to={user?.role === 'admin' ? '/admin' : user?.role === 'worker' ? '/worker' : '/resident'} replace />
           )
         }
       />

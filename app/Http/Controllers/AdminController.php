@@ -528,6 +528,63 @@ class AdminController extends Controller
     }
 
     /**
+     * Mark a resident payment invoice as settled via cash or manual cheque.
+     */
+    public function markPaymentPaid(Request $request, $id): JsonResponse
+    {
+        $payment = Payment::find($id);
+
+        if (!$payment) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Payment invoice record not found.'
+            ], 404);
+        }
+
+        if ($payment->status === 'paid') {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'This payment invoice is already fully cleared.'
+            ], 422);
+        }
+
+        $payment->update([
+            'status' => 'paid',
+            'payment_method' => $request->payment_method ?? 'cash',
+            'paid_at' => Carbon::now(),
+            'transaction_id' => 'TXN-' . Str::upper(Str::random(10)),
+        ]);
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Payment invoice marked as paid successfully.',
+            'data' => $payment
+        ]);
+    }
+
+    /**
+     * Permanently remove a payment invoice from the system.
+     */
+    public function deletePayment($id): JsonResponse
+    {
+        $payment = Payment::find($id);
+
+        if (!$payment) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Payment invoice record not found.'
+            ], 404);
+        }
+
+        $payment->delete();
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Payment invoice record deleted successfully.'
+        ]);
+    }
+
+    /**
      * Read or view complaint logs.
      */
     public function complaints(Request $request): JsonResponse
