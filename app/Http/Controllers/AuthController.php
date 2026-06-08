@@ -186,7 +186,7 @@ class AuthController extends Controller
         $user = $request->user();
 
         $validator = Validator::make($request->all(), [
-            'photo' => 'required|image|mimes:jpeg,png,jpg,webp|max:2048', // Max 2MB
+            'photo' => 'required|image|mimes:jpeg,png,jpg,webp|max:10240', // Max 10MB
         ]);
 
         if ($validator->fails()) {
@@ -208,6 +208,7 @@ class AuthController extends Controller
                 'status' => 'success',
                 'message' => 'Profile photo updated successfully.',
                 'data' => [
+                    'profile_photo_path' => $photoPath,
                     'profile_photo_url' => asset('storage/' . $photoPath)
                 ]
             ], 200);

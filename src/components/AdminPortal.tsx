@@ -364,7 +364,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
     block: 'Block A',
     unit: 'A-101',
     language: 'English',
-    moveInDate: '2026-05-20',
+    moveInDate: new Date().toISOString().split('T')[0],
     avatar: '',
     nic: '',
     occupancyType: 'Owner-Occupier',
@@ -932,6 +932,33 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
   const [redFlags, setRedFlags] = useState<any[]>([]);
 
   // Fetch or populate data
+  const persistUserAvatar = async (targetId: number, targetType: 'resident' | 'worker', avatarVal: string) => {
+    const targetEmail = targetType === 'resident'
+      ? residents.find(r => r.id === targetId)?.email
+      : users.find(u => u.id === targetId)?.email;
+    
+    if (targetEmail) {
+      try {
+        await fetch('/api/admin/users', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Accept': 'application/json',
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            email: targetEmail,
+            role: targetType,
+            avatar: avatarVal
+          })
+        });
+        loadAdminMetrics();
+      } catch (err) {
+        console.error("Failed to persist user avatar", err);
+      }
+    }
+  };
+
   const loadAdminMetrics = async () => {
     setLoading(true);
     setFeedbackMessage(null);
@@ -1032,21 +1059,31 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
         console.error("Failed to parse users data", err);
       }
 
+      let localJobs: any[] = [];
       if (jobsData && (Array.isArray(jobsData) || jobsData.data)) {
-        setJobs(Array.isArray(jobsData) ? jobsData : (jobsData.data || []));
+        localJobs = Array.isArray(jobsData) ? jobsData : (jobsData.data || []);
+        setJobs(localJobs);
       } else {
         setJobs([]);
       }
 
+      let localPayments: any[] = [];
       if (paymentsData?.status === 'success' && paymentsData.data?.length > 0) {
-        setPayments(paymentsData.data || []);
+        localPayments = paymentsData.data || [];
+        setPayments(localPayments);
       } else {
         setPayments([]);
       }
 
+      let localComplaints: any[] = [];
       if (complaintsData?.status === 'success' && complaintsData.data?.length > 0) {
-        const mappedComplaints = (complaintsData.data || []).map((c: any) => ({
+        localComplaints = (complaintsData.data || []).map((c: any) => ({
           ...c,
+          title: c.category === 'missed_collection' ? 'Missed Pickup' 
+                : (c.category === 'wrong_time' ? 'Late Collection' 
+                : (c.category === 'worker_rudeness' ? 'Worker Rudeness' 
+                : (c.category === 'spilled_waste' ? 'Spilled Waste' 
+                : (c.category ? c.category.split('_').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') : 'Other Mishap')))),
           resolved_notes: c.resolved_notes || c.internal_notes || '',
           resident_name: c.resident ? c.resident.name : (c.resident_name || 'Resident Occupant'),
           resident_full_name: c.resident ? c.resident.name : (c.resident_full_name || c.resident_name || 'Resident Occupant'),
@@ -1057,7 +1094,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
           related_job_worker: c.job?.worker ? c.job.worker.name : (c.related_job_worker || null),
           related_job_status: c.job ? c.job.status : (c.related_job_status || null),
         }));
-        setComplaints(mappedComplaints);
+        setComplaints(localComplaints);
       } else {
         setComplaints([]);
       }
@@ -1122,7 +1159,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
 
       if (usersList.length > 0) {
         // Parse and set workers list
-        const parsedWorkers = usersList.filter((u: any) => u.role === 'worker' || u.role === 'admin').map((u: any) => ({
+        const parsedWorkers = usersList.filter((u: any) => u.role === 'worker').map((u: any) => ({
           id: u.id,
           name: u.name,
           email: u.email,
@@ -1133,7 +1170,9 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
           rating: Number(u.rating) || 4.5,
           nic: u.nic || 'N/A',
           assignedBlocks: u.assigned_blocks || 'All Blocks',
-          avatar: (u.name || 'W').split(' ').map((n: string) => n[0]).join('').toUpperCase()
+          avatar: u.profile_photo_path
+            ? (u.profile_photo_path.startsWith('http') ? u.profile_photo_path : `/storage/${u.profile_photo_path}`)
+            : (u.name || 'W').split(' ').map((n: string) => n[0]).join('').toUpperCase()
         }));
         
         setUsers(parsedWorkers);
@@ -1151,7 +1190,9 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
             unit: unitNumber,
             language: u.language || 'English',
             moveInDate: u.move_in_date || '2026-05-01',
-            avatar: (u.name || 'R').split(' ').map((n: string) => n[0]).join('').toUpperCase(),
+            avatar: u.profile_photo_path
+              ? (u.profile_photo_path.startsWith('http') ? u.profile_photo_path : `/storage/${u.profile_photo_path}`)
+              : (u.name || 'R').split(' ').map((n: string) => n[0]).join('').toUpperCase(),
             nic: u.nic || 'N/A',
             occupancyType: u.occupancy_type || 'Tenant',
             householdMembers: Number(u.household_members) || 2,
@@ -1372,6 +1413,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
             let mappedId = 3;
             if (flag.type === 'missed_collections') mappedId = 1;
             else if (flag.type === 'low_rating') mappedId = 2;
+            else if (flag.type === 'open_complaints') mappedId = 4;
             
             return {
               id: mappedId || index,
@@ -1395,6 +1437,54 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
           { id: 3, title: '4 overdue payments outstanding', subtext: 'LKR 4,000 total unpaid • Action recommended' }
         ]);
       }
+
+      // ── BUILD DYNAMIC NOTIFICATIONS ──
+      const newNotifications: any[] = [];
+      const existingReadStatus = new Map(notifications.map(n => [n.id, n.read]));
+
+      // 1. Open complaints
+      localComplaints.filter((c: any) => c.status === 'open').forEach((c: any) => {
+        const notifId = `complaint-${c.id}`;
+        const isRead = existingReadStatus.has(notifId) ? existingReadStatus.get(notifId) : false;
+        newNotifications.push({
+          id: notifId,
+          type: 'complaint',
+          title: c.title || 'New Complaint Logged',
+          message: `${c.resident_name || 'Resident'} (Unit ${c.unit_number || 'N/A'}) reported: "${c.description || ''}"`,
+          time: c.created_at ? formatActivityTime(new Date(c.created_at).getTime()) : 'Just now',
+          read: isRead
+        });
+      });
+
+      // 2. Job Issues
+      localJobs.filter((j: any) => j.status === 'issue').forEach((j: any) => {
+        const notifId = `job-issue-${j.id}`;
+        const isRead = existingReadStatus.has(notifId) ? existingReadStatus.get(notifId) : false;
+        newNotifications.push({
+          id: notifId,
+          type: 'job',
+          title: 'Job Incident Reported',
+          message: `Worker ${j.worker?.name || 'Worker'} reported issue: "${j.issue_reason || 'Access block'}" at ${j.unit?.unit_number || (j.floor ? 'Block ' + (j.floor.block?.name || '') + ' - Floor ' + j.floor.floor_number : 'Housing Block')}`,
+          time: j.updated_at ? formatActivityTime(new Date(j.updated_at).getTime()) : 'Recently',
+          read: isRead
+        });
+      });
+
+      // 3. Recent Payments
+      localPayments.filter((p: any) => p.status === 'paid').slice(0, 5).forEach((p: any) => {
+        const notifId = `pay-${p.id}`;
+        const isRead = existingReadStatus.has(notifId) ? existingReadStatus.get(notifId) : false;
+        newNotifications.push({
+          id: notifId,
+          type: 'payment',
+          title: 'Payment Received',
+          message: `${p.resident?.name || p.resident_name || 'Resident'} paid LKR ${Number(p.amount || 0).toLocaleString()} for Unit ${p.unit?.unit_number || 'N/A'}`,
+          time: p.paid_at ? formatActivityTime(new Date(p.paid_at).getTime()) : 'Recently',
+          read: isRead
+        });
+      });
+
+      setNotifications(newNotifications);
 
     } catch (e) {
       console.error(e);
@@ -3283,6 +3373,34 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
   // Enlist a resident
   const handleCreateResident = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Prevent premature submissions from general or ecology steps (e.g. on Enter key press or accidental submit)
+    if (residentModalTab !== 'emergency') {
+      const isFirstStepValid = 
+        residentForm.firstName.trim() !== '' &&
+        residentForm.lastName.trim() !== '' &&
+        residentForm.email.trim() !== '' &&
+        residentForm.phone.trim() !== '' &&
+        residentForm.nic.trim() !== '';
+
+      if (residentModalTab === 'general') {
+        if (isFirstStepValid) {
+          setResidentModalTab('ecology');
+          setResidentValError(null);
+        } else {
+          setResidentValError('Please fill in all textboxes in the Bio & Photo step (First Name, Last Name, Email, Phone, NIC) to unlock the next steps.');
+        }
+      } else if (residentModalTab === 'ecology') {
+        if (isFirstStepValid) {
+          setResidentModalTab('emergency');
+          setResidentValError(null);
+        } else {
+          setResidentValError('Please fill in all textboxes in the Bio & Photo step to proceed.');
+        }
+      }
+      return;
+    }
+
     const fullName = `${residentForm.firstName} ${residentForm.lastName}`.trim();
     if (!fullName) return;
 
@@ -3325,6 +3443,18 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
           unit_id: unit_id,
           unit_number: residentForm.unit, // Fallback: backend resolves unit_number → unit_id
           block: residentForm.block,      // Fallback: helps backend narrow the search
+          nic: residentForm.nic,
+          language: residentForm.language,
+          occupancy_type: residentForm.occupancyType,
+          household_members: residentForm.householdMembers,
+          move_in_date: residentForm.moveInDate,
+          recycling_plan: residentForm.recyclingPlan,
+          emergency_contact_name: residentForm.emergencyContactName,
+          emergency_contact_phone: residentForm.emergencyContactPhone,
+          assistance_required: residentForm.assistanceRequired,
+          whatsapp_enabled: residentForm.whatsappEnabled,
+          notes: residentForm.notes,
+          avatar: residentForm.avatar
         })
       });
       
@@ -3362,7 +3492,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
       block: defaultBlock,
       unit: defaultUnit,
       language: 'English',
-      moveInDate: '2026-05-20',
+      moveInDate: new Date().toISOString().split('T')[0],
       avatar: '',
       nic: '',
       occupancyType: 'Owner-Occupier',
@@ -4585,6 +4715,10 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                           // Rating drop -> Go to workers (users tab, workers subtab)
                           setActiveTab('users');
                           setUserSubTab('workers');
+                        } else if (flag.id === 4) {
+                          // Open complaints -> Go to complaints tab and filter as open
+                          setActiveTab('complaints');
+                          setComplaintFilter('open');
                         } else {
                           // Overdue payments -> Go to payments tab and filter as unpaid
                           setActiveTab('payments');
@@ -5223,7 +5357,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                                   title="Click to add/remove photo"
                                   onClick={() => setPictureEditTarget({ id: item.id, name: item.name, type: 'resident', avatar: item.avatar || '' })}
                                 >
-                                  {(item.avatar && (item.avatar.startsWith('http') || item.avatar.startsWith('data:'))) ? (
+                                  {(item.avatar && (item.avatar.startsWith('http') || item.avatar.startsWith('data:') || item.avatar.startsWith('/storage') || item.avatar.includes('.'))) ? (
                                     <img src={item.avatar} alt={item.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                                   ) : (
                                     (item.avatar && item.avatar.length <= 3) ? item.avatar : item.name.slice(0, 2).toUpperCase()
@@ -5290,7 +5424,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                                   title="Click to add/remove photo"
                                   onClick={() => setPictureEditTarget({ id: item.id, name: item.name, type: 'worker', avatar: item.avatar || '' })}
                                 >
-                                  {(item.avatar && (item.avatar.startsWith('http') || item.avatar.startsWith('data:'))) ? (
+                                  {(item.avatar && (item.avatar.startsWith('http') || item.avatar.startsWith('data:') || item.avatar.startsWith('/storage') || item.avatar.includes('.'))) ? (
                                     <img src={item.avatar} alt={item.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                                   ) : (
                                     (item.avatar && item.avatar.length <= 3) ? item.avatar : item.name.split(' ').map((n: string)=>n[0]).join('').toUpperCase().slice(0, 2)
@@ -9388,16 +9522,31 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                           })
                           .then(async (res) => {
                             const data = await res.json();
-                            if (!res.ok) throw new Error(data.message || "Failed to upload photo");
+                            if (!res.ok) {
+                              let errorMsg = data.message || "Failed to upload photo";
+                              if (data.errors) {
+                                const errorDetails = Object.values(data.errors).flat().join(' ');
+                                if (errorDetails) {
+                                  errorMsg = `${errorMsg}: ${errorDetails}`;
+                                }
+                              }
+                              throw new Error(errorMsg);
+                            }
+                            
+                            const finalUrl = data.data.profile_photo_path 
+                              ? `/storage/${data.data.profile_photo_path}` 
+                              : (data.data.profile_photo_url.startsWith('http') 
+                                  ? new URL(data.data.profile_photo_url).pathname 
+                                  : data.data.profile_photo_url);
                             
                             setSettingsProfile(prev => ({
                               ...prev,
-                              avatarUrl: data.data.profile_photo_url
+                              avatarUrl: finalUrl
                             }));
                             setFeedbackMessage("Success: Profile photo updated and synchronized with database!");
                             onUserUpdate?.({
                               ...user,
-                              profile_photo_url: data.data.profile_photo_url
+                              profile_photo_url: finalUrl
                             });
                             loadAdminMetrics();
                           })
@@ -11477,6 +11626,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                         {/* Cancel / Previous button */}
                         {residentModalTab === 'general' ? (
                           <button
+                            key="cancel-btn"
                             type="button"
                             onClick={() => setIsAddResidentModalOpen(false)}
                             className="flex-1 py-2.5 rounded-xl border border-gray-200 hover:bg-slate-50 text-gray-500 text-xs font-black transition-all cursor-pointer text-center"
@@ -11485,6 +11635,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                           </button>
                         ) : (
                           <button
+                            key="back-btn"
                             type="button"
                             onClick={() => {
                               if (residentModalTab === 'ecology') setResidentModalTab('general');
@@ -11500,6 +11651,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                         {/* Next / Submit Button */}
                         {residentModalTab !== 'emergency' ? (
                           <button
+                            key="next-btn"
                             type="button"
                             onClick={() => {
                               if (residentModalTab === 'general') {
@@ -11524,6 +11676,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                           </button>
                         ) : (
                           <button
+                            key="submit-btn"
                             type="submit"
                             className="flex-1 py-2.5 rounded-xl bg-[#2E7D32] hover:bg-[#1E562F] text-white text-xs font-black transition-all cursor-pointer text-center shadow-md shadow-emerald-950/15 animate-pulse"
                           >
@@ -11935,6 +12088,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                           
                           setPictureEditTarget(prev => prev ? { ...prev, avatar: base64Url } : null);
                           setFeedbackMessage(`Updated profile picture for ${pictureEditTarget.name}.`);
+                          persistUserAvatar(pictureEditTarget.id, pictureEditTarget.type, base64Url);
                         };
                         reader.readAsDataURL(file);
                       }
@@ -11964,6 +12118,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                           }
                           setPictureEditTarget(prev => prev ? { ...prev, avatar: presetUrl } : null);
                           setFeedbackMessage(`Updated profile picture to preset ${idx + 1} for ${pictureEditTarget.name}.`);
+                          persistUserAvatar(pictureEditTarget.id, pictureEditTarget.type, presetUrl);
                         }}
                         className="w-7 h-7 rounded-full overflow-hidden border border-gray-100 hover:scale-110 active:scale-95 transition-transform shrink-0"
                       >
@@ -11985,6 +12140,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                       }
                       setPictureEditTarget(prev => prev ? { ...prev, avatar: '' } : null);
                       setFeedbackMessage(`Removed profile photo for ${pictureEditTarget.name}. Falling back to default initials.`);
+                      persistUserAvatar(pictureEditTarget.id, pictureEditTarget.type, '');
                     }}
                     className="w-full py-2.5 rounded-xl border border-red-200 bg-red-50 hover:bg-red-100/60 text-red-750 text-xs font-black transition-all cursor-pointer text-center"
                   >
@@ -12014,10 +12170,10 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
               <div className="flex justify-between items-start mb-4 border-b border-gray-100 pb-3">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-full bg-emerald-50 text-[#2E7D32] border border-emerald-100 flex items-center justify-center overflow-hidden shrink-0">
-                    {inspectingResident.avatar ? (
+                    {(inspectingResident.avatar && (inspectingResident.avatar.startsWith('http') || inspectingResident.avatar.startsWith('data:') || inspectingResident.avatar.startsWith('/storage') || inspectingResident.avatar.includes('.'))) ? (
                       <img src={inspectingResident.avatar} alt="Profile" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                     ) : (
-                      <span className="font-black text-xs">{(inspectingResident.name || 'R').slice(0, 2).toUpperCase()}</span>
+                      <span className="font-black text-xs">{(inspectingResident.avatar && inspectingResident.avatar.length <= 3) ? inspectingResident.avatar : (inspectingResident.name || 'R').slice(0, 2).toUpperCase()}</span>
                     )}
                   </div>
                   <div>
@@ -12072,7 +12228,21 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                         email: inspectingResident.email,
                         phone: inspectingResident.phone,
                         role: 'resident',
-                        unit_id: unit_id
+                        unit_id: unit_id,
+                        unit_number: inspectingResident.unit,
+                        block: inspectingResident.block,
+                        nic: inspectingResident.nic,
+                        language: inspectingResident.language,
+                        occupancy_type: inspectingResident.occupancyType,
+                        household_members: inspectingResident.householdMembers,
+                        move_in_date: inspectingResident.moveInDate,
+                        recycling_plan: inspectingResident.recyclingPlan,
+                        emergency_contact_name: inspectingResident.emergencyContactName,
+                        emergency_contact_phone: inspectingResident.emergencyContactPhone,
+                        assistance_required: inspectingResident.assistanceRequired,
+                        whatsapp_enabled: inspectingResident.whatsappEnabled,
+                        notes: inspectingResident.notes,
+                        avatar: inspectingResident.avatar
                       })
                     });
                     if (!response.ok) throw new Error();
@@ -12385,10 +12555,10 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
               <div className="flex justify-between items-start mb-4 border-b border-gray-100 pb-3">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-full bg-blue-50 text-blue-700 border border-blue-100 flex items-center justify-center overflow-hidden shrink-0">
-                    {inspectingWorker.avatar ? (
+                    {(inspectingWorker.avatar && (inspectingWorker.avatar.startsWith('http') || inspectingWorker.avatar.startsWith('data:') || inspectingWorker.avatar.startsWith('/storage') || inspectingWorker.avatar.includes('.'))) ? (
                       <img src={inspectingWorker.avatar} alt="Profile" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                     ) : (
-                      <span className="font-black text-xs">{(inspectingWorker.name || 'W').slice(0, 2).toUpperCase()}</span>
+                      <span className="font-black text-xs">{(inspectingWorker.avatar && inspectingWorker.avatar.length <= 3) ? inspectingWorker.avatar : (inspectingWorker.name || 'W').slice(0, 2).toUpperCase()}</span>
                     )}
                   </div>
                   <div>
@@ -12422,6 +12592,8 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                         email: inspectingWorker.email,
                         phone: inspectingWorker.phone,
                         role: 'worker',
+                        nic: inspectingWorker.nic,
+                        avatar: inspectingWorker.avatar,
                         shift: (() => {
                           const sh = (inspectingWorker.shift || 'morning').toLowerCase();
                           if (sh.includes('morning')) return 'morning';

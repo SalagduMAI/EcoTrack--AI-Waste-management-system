@@ -112,6 +112,22 @@ class AdminController extends Controller
                 ];
             });
 
+        $recentComplaints = Complaint::with(['resident', 'unit'])
+            ->orderBy('created_at', 'desc')
+            ->take(5)
+            ->get()
+            ->map(function ($c) {
+                return [
+                    'type' => 'complaint',
+                    'resident_name' => $c->resident->name ?? 'Resident',
+                    'description' => $c->description,
+                    'unit' => $c->unit->unit_number ?? 'N/A',
+                    'status' => $c->status,
+                    'time_ago' => $c->created_at->diffForHumans(),
+                    'timestamp' => $c->created_at->timestamp,
+                ];
+            });
+
         $dbActivityLogs = \App\Models\ActivityLog::orderBy('created_at', 'desc')
             ->take(15)
             ->get()
@@ -129,6 +145,7 @@ class AdminController extends Controller
             ->merge($recentCompletedJobs)
             ->merge($recentIncidents)
             ->merge($recentPayments)
+            ->merge($recentComplaints)
             ->merge($dbActivityLogs)
             ->sortByDesc('timestamp')
             ->take(15)
@@ -175,6 +192,16 @@ class AdminController extends Controller
                 'type' => 'low_rating',
                 'title' => "Worker {$row->worker->name} rating concern",
                 'description' => "Average rating dropped to " . number_format($row->avg_rating, 1) . "★ on recent resident ratings feedback.",
+            ];
+        }
+
+        // Flag 4: Open resident complaints
+        $openComplaintsCount = Complaint::where('status', 'open')->count();
+        if ($openComplaintsCount > 0) {
+            $redFlags[] = [
+                'type' => 'open_complaints',
+                'title' => "{$openComplaintsCount} open resident complaints",
+                'description' => "Unresolved resident grievances require active intervention and supervisor resolution.",
             ];
         }
 
@@ -265,17 +292,70 @@ class AdminController extends Controller
             }
         }
 
+        // Gather all extra details if provided
+        $extraData = [];
+
+        // Handle avatar / profile picture upload
+        if ($request->has('avatar') && $request->avatar !== null) {
+            $avatar = $request->avatar;
+            if ($avatar === '') {
+                // If explicit empty string, it means user wants to remove photo
+                $extraData['profile_photo_path'] = null;
+            } elseif (preg_match('/^data:image\/(\w+);base64,/', $avatar, $type)) {
+                $base64Data = substr($avatar, strpos($avatar, ',') + 1);
+                $type = strtolower($type[1]); // jpg, png, gif, webp, etc.
+                if (in_array($type, ['jpg', 'jpeg', 'gif', 'png', 'webp'])) {
+                    $decodedData = base64_decode($base64Data);
+                    if ($decodedData !== false) {
+                        $filename = 'profile-photos/' . Str::random(40) . '.' . $type;
+                        \Illuminate\Support\Facades\Storage::disk('public')->put($filename, $decodedData);
+                        $extraData['profile_photo_path'] = $filename;
+                    }
+                }
+            } else {
+                // If it is a preset URL or standard path, we save it (or strip /storage/ if present)
+                $path = $avatar;
+                if (str_starts_with($path, '/storage/')) {
+                    $path = substr($path, 9);
+                }
+                $extraData['profile_photo_path'] = $path;
+            }
+        }
+
+        $fields = [
+            'nic', 'move_in_date', 'occupancy_type',
+            'recycling_plan', 'emergency_contact_name', 'emergency_contact_phone', 'notes', 'language'
+        ];
+
+        foreach ($fields as $field) {
+            if ($request->has($field)) {
+                $extraData[$field] = $request->input($field);
+            }
+        }
+
+        if ($request->has('whatsapp_enabled')) {
+            $extraData['whatsapp_enabled'] = filter_var($request->input('whatsapp_enabled'), FILTER_VALIDATE_BOOLEAN);
+        }
+        if ($request->has('assistance_required')) {
+            $extraData['assistance_required'] = filter_var($request->input('assistance_required'), FILTER_VALIDATE_BOOLEAN);
+        }
+        if ($request->has('household_members')) {
+            $extraData['household_members'] = (int) $request->input('household_members');
+        }
+
         // Check if user with this email already exists
         $user = User::where('email', $email)->first();
 
         if ($user) {
             // Update existing user instead of failing on unique validation
-            $user->update([
+            $updateFields = array_merge([
                 'name' => $request->name ?: $user->name,
                 'phone' => $request->phone ?: $user->phone,
                 'role' => $role,
                 'shift' => $role === 'worker' ? ($request->shift ?: $user->shift) : null,
-            ]);
+            ], $extraData);
+
+            $user->update($updateFields);
 
             // Auto assign unit relationship if standard resident role
             if ($user->role === 'resident' && $unitId) {
@@ -320,7 +400,7 @@ class AdminController extends Controller
             ], 422);
         }
 
-        $user = User::create([
+        $createFields = array_merge([
             'name' => $request->name,
             'email' => $request->email,
             'phone' => $request->phone,
@@ -328,7 +408,9 @@ class AdminController extends Controller
             'role' => $request->role,
             'shift' => $request->role === 'worker' ? $request->shift : null,
             'status' => 'active',
-        ]);
+        ], $extraData);
+
+        $user = User::create($createFields);
 
         // Auto assign unit relationship if standard resident role
         if ($user->role === 'resident' && $unitId) {

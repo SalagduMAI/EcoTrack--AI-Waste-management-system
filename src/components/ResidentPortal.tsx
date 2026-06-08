@@ -109,10 +109,11 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
 
         const data = await response.json();
         if (response.ok && data.status === 'success') {
-          const freshPhotoUrl = data.data.profile_photo_url;
-          const finalUrl = freshPhotoUrl.startsWith('http') 
-            ? new URL(freshPhotoUrl).pathname 
-            : freshPhotoUrl;
+          const finalUrl = data.data.profile_photo_path 
+            ? `/storage/${data.data.profile_photo_path}` 
+            : (data.data.profile_photo_url.startsWith('http') 
+                ? new URL(data.data.profile_photo_url).pathname 
+                : data.data.profile_photo_url);
 
           setProfileImage(finalUrl);
 
@@ -125,7 +126,17 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
           setMessage("Profile picture changed and saved successfully! 🌿");
         } else {
           console.error("Failed to upload profile photo:", data);
-          setMessage(`Upload failed: ${data.message || 'Validation error'}`);
+          // Revert optimistic preview on failure
+          setProfileImage(user?.profile_photo_url || '');
+          
+          let errorMsg = data.message || 'Validation error';
+          if (data.errors) {
+            const errorDetails = Object.values(data.errors).flat().join(' ');
+            if (errorDetails) {
+              errorMsg = `${errorMsg}: ${errorDetails}`;
+            }
+          }
+          setMessage(`Upload failed: ${errorMsg}`);
         }
       } catch (err) {
         console.error("Error uploading profile photo:", err);
@@ -692,7 +703,19 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
       const DEFAULT_COMPLAINTS_MOCK: any[] = [];
 
       if (compData?.status === 'success') {
-        const live = compData.data || [];
+        const live = (compData.data || []).map((c: any) => {
+          let friendlyCategory = c.category;
+          if (c.category === 'missed_collection') friendlyCategory = 'Missed pickup';
+          else if (c.category === 'wrong_time') friendlyCategory = 'Late collection';
+          else if (c.category === 'other') friendlyCategory = 'Other mishap';
+          else if (c.category) {
+            friendlyCategory = c.category.split('_').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+          }
+          return {
+            ...c,
+            category: friendlyCategory
+          };
+        });
         const merged = [...live];
         DEFAULT_COMPLAINTS_MOCK.forEach(m => {
           if (!merged.some(l => l.complaint_code === m.complaint_code || m.id === l.id)) {
@@ -891,17 +914,39 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
       let isUnsure = false;
       let confidence = Math.floor(Math.random() * 8) + 91; // Realistic 91-98%
 
-      // Check if user is asking about batteries to trigger the unsure/escalate flow
-      const lowerText = userText.toLowerCase();
-      if (lowerText.includes('battery') || lowerText.includes('batteries') || lowerText.includes('hazardous')) {
-        botReplyText = "Confidence below 60%. Want me to escalate this to your scheme manager?";
-        isUnsure = true;
-        confidence = 54;
-      } else if (response.ok && data.status === 'success') {
-        botReplyText = data.response || data.data?.reply || data.reply || "I'm sorry, I couldn't process that.";
-        logId = data.log_id || data.data?.log_id;
+      if (response.ok && data.status === 'success') {
+        const payloadData = data.data || data;
+        botReplyText = payloadData.reply || "I'm sorry, I couldn't process that.";
+        logId = payloadData.log_id;
+        isUnsure = !!payloadData.is_unsure;
+        confidence = payloadData.confidence || confidence;
+
+        // If a ticket was created by the backend automatically
+        if (payloadData.ticket_created && payloadData.ticket_details) {
+          const tDetails = payloadData.ticket_details;
+          setMyComplaints(prev => [tDetails, ...prev]);
+          setNotifications(prev => [
+            {
+              id: 'notif-esc-' + Date.now(),
+              title: payloadData.is_unsure ? 'Escalation Sent ✓' : 'Ticket Created ✓',
+              message: `Eco-Bot logged ticket ${payloadData.ticket_code}: ${tDetails.description.substring(0, 80)}...`,
+              time: 'Just now',
+              read: false
+            },
+            ...prev
+          ]);
+          setMessage(`Eco-Bot logged ticket ${payloadData.ticket_code} directly in the database!`);
+        }
       } else {
-        botReplyText = "Organic foods scraps go into composting bins. Recycle clean plastics separately under Greenfield instructions!";
+        // Fallback for offline / connection errors
+        const lowerText = userText.toLowerCase();
+        if (lowerText.includes('battery') || lowerText.includes('batteries') || lowerText.includes('hazardous')) {
+          botReplyText = "Confidence below 60%. Want me to escalate this to your scheme manager?";
+          isUnsure = true;
+          confidence = 54;
+        } else {
+          botReplyText = "Organic foods scraps go into composting bins. Recycle clean plastics separately under Greenfield instructions!";
+        }
       }
 
       const botMsg = {
@@ -1138,8 +1183,13 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
     setActionLoading(true);
     try {
       const targetCategory = getCategoryLabel(complaintWhatHappened);
+      let apiCategory = 'other';
+      if (complaintWhatHappened === 'not_collected') apiCategory = 'missed_collection';
+      else if (complaintWhatHappened === 'too_late') apiCategory = 'wrong_time';
+      else if (complaintWhatHappened === 'wrong_sorting') apiCategory = 'other';
+
       const payload = {
-        category: targetCategory,
+        category: apiCategory,
         description: complaintDescription,
         date: complaintDate,
         expected_time: complaintTime
@@ -3965,21 +4015,21 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
                   {/* RIGHT CHAT AREA (Body viewport) */}
                   <div className="flex-1 flex flex-col bg-white overflow-hidden relative">
                     
-                                        {/* PREMIUM CHAT AREA HEADER */}
-                    <div className="px-5 py-3.5 border-b border-slate-100 bg-white flex items-center justify-between shrink-0">
+                    {/* PREMIUM CHAT AREA HEADER */}
+                    <div className="px-4 sm:px-5 py-3 border-b border-slate-100 bg-white flex items-center justify-between shrink-0 gap-2">
                       <div className="flex items-center gap-3">
                         <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-100 to-emerald-50 text-emerald-800 flex items-center justify-center border border-emerald-200/50 shadow-3xs">
                           <Bot className="w-5 h-5 text-[#1E4D2B]" />
                         </div>
                         <div>
-                          <div className="flex items-center gap-2">
+                          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
                             <h3 className="text-xs font-black text-gray-900 font-sans tracking-tight">Eco-Bot Assistant</h3>
-                            <span className="px-1.5 py-0.5 rounded bg-emerald-50 border border-emerald-250/50 text-[8px] font-black text-emerald-700 uppercase tracking-wider">SECURE LINK</span>
+                            <span className="px-1.5 py-0.5 rounded bg-emerald-50 border border-emerald-250/50 text-[8px] font-black text-emerald-700 uppercase tracking-wider shrink-0">SECURE LINK</span>
                           </div>
-                          <p className="text-[9.5px] text-gray-400 font-bold block mt-0.5 text-left">Answers only waste sorting, schedules, payments & complaints queries.</p>
+                          <p className="text-[9.5px] text-gray-400 font-bold hidden sm:block mt-0.5 text-left">Answers only waste sorting, schedules, payments & complaints queries.</p>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2.5">
+                      <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
                         <button
                           type="button"
                           onClick={() => {
@@ -4002,15 +4052,15 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
                             setEcoBotView('active');
                             setMessage('Chat session restarted. Type your query directly. 🌿');
                           }}
-                          className="px-3 py-1.5 border border-slate-200 hover:border-emerald-300 hover:bg-[#F4F8F5] text-gray-500 hover:text-[#1E4D2B] bg-white font-extrabold rounded-lg tracking-tight select-none cursor-pointer text-xs transition-all flex items-center gap-1.5 shrink-0 shadow-3xs active:scale-95"
+                          className="px-2 sm:px-3 py-1.5 border border-slate-200 hover:border-emerald-300 hover:bg-[#F4F8F5] text-gray-500 hover:text-[#1E4D2B] bg-white font-extrabold rounded-lg tracking-tight select-none cursor-pointer text-xs transition-all flex items-center gap-1.5 shrink-0 shadow-3xs active:scale-95"
                           title="Restart Chat Session"
                         >
                           <RefreshCw className="w-3.5 h-3.5 text-gray-400" />
-                          <span>New Session</span>
+                          <span className="hidden sm:inline">New Session</span>
                         </button>
-                        <div className="flex items-center gap-1.5 bg-emerald-50 border border-emerald-200/30 px-2.5 py-1 rounded-full">
+                        <div className="flex items-center gap-1 sm:gap-1.5 bg-emerald-50 border border-emerald-200/30 px-2 sm:px-2.5 py-1 rounded-full shrink-0">
                           <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                          <span className="text-[8.5px] text-emerald-700 font-black uppercase tracking-widest">Active</span>
+                          <span className="text-[8px] sm:text-[8.5px] text-emerald-700 font-black uppercase tracking-wide sm:tracking-widest">Active</span>
                         </div>
                       </div>
                     </div>
@@ -4073,27 +4123,48 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
                                     </button>
                                     <button 
                                       type="button"
-                                      onClick={() => {
-                                        const mockClaim = {
-                                          id: Date.now(),
-                                          complaint_code: 'C-' + Math.floor(Math.random() * 900 + 100),
-                                          category: 'other',
-                                          description: 'Escalated Query, automatic dispatch from Eco-bot: How do I dispose of batteries safely?',
-                                          status: 'open',
-                                          created_at: new Date().toISOString()
-                                        };
-                                        setMyComplaints(prev => [mockClaim, ...prev]);
-                                        setNotifications(prev => [
-                                          {
-                                            id: 'notif-esc-' + Date.now(),
-                                            title: 'Escalation Sent ✓',
-                                            message: 'Your battery disposal query was officially dispatched to Greenfield complex supervisor for review. Status tracking code: ' + mockClaim.complaint_code,
-                                            time: 'Just now',
-                                            read: false
-                                          },
-                                          ...prev
-                                        ]);
-                                        setMessage('Dispatched ticket ' + mockClaim.complaint_code + ' directly to supervisor keys. Check complaints tab!');
+                                      onClick={async () => {
+                                        const prevUserMsg = chatMessages[idx - 1]?.text || "Disposal Query";
+                                        setActionLoading(true);
+                                        try {
+                                          const response = await fetch('/api/resident/report-missed', {
+                                            method: 'POST',
+                                            headers: {
+                                              'Authorization': `Bearer ${token}`,
+                                              'Accept': 'application/json',
+                                              'Content-Type': 'application/json'
+                                            },
+                                            body: JSON.stringify({
+                                              category: 'other',
+                                              description: 'Escalated Query from Eco-bot: ' + prevUserMsg
+                                            })
+                                          });
+
+                                          const data = await response.json();
+                                          setActionLoading(false);
+
+                                          if (response.ok && data.status === 'success') {
+                                            const realTicket = data.data || data;
+                                            setMyComplaints(prev => [realTicket, ...prev]);
+                                            setNotifications(prev => [
+                                              {
+                                                id: 'notif-esc-' + Date.now(),
+                                                title: 'Escalation Sent ✓',
+                                                message: 'Your query was officially dispatched to Greenfield complex supervisor for review. Status tracking code: ' + realTicket.complaint_code,
+                                                time: 'Just now',
+                                                read: false
+                                              },
+                                              ...prev
+                                            ]);
+                                            setMessage('Dispatched ticket ' + realTicket.complaint_code + ' directly to supervisor. Check complaints tab!');
+                                          } else {
+                                            setMessage('Failed to escalate query. Try again shortly.');
+                                          }
+                                        } catch (err) {
+                                          setActionLoading(false);
+                                          console.error(err);
+                                          setMessage('Error connecting to support servers.');
+                                        }
                                       }}
                                       className="py-1 px-2.5 bg-[#1E4D2B] hover:bg-[#15341D] text-white rounded-lg text-[10px] font-black transition-all cursor-pointer flex items-center gap-1 shadow-3xs"
                                     >
@@ -4195,7 +4266,7 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
                             setEcoBotView('active');
                             setMessage('Chat session restarted. Type your query directly. 🌿');
                           }}
-                          className="w-8 h-8 rounded-lg border border-slate-200 flex items-center justify-center text-gray-400 hover:text-[#1E4D2B] hover:border-emerald-355 bg-white transition-all cursor-pointer shrink-0 active:scale-90 shadow-3xs hover:rotate-90"
+                          className="w-8 h-8 rounded-lg border border-slate-200 hidden sm:flex items-center justify-center text-gray-400 hover:text-[#1E4D2B] hover:border-emerald-355 bg-white transition-all cursor-pointer shrink-0 active:scale-90 shadow-3xs hover:rotate-90"
                           title="Restart Chat Session"
                         >
                           <RefreshCw className="w-3.5 h-3.5 text-gray-400 hover:text-emerald-700 transition-colors" />
@@ -4205,13 +4276,13 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
                           type="text"
                           value={botInput}
                           onChange={(e) => setBotInput(e.target.value)}
-                          placeholder="Ask about waste sorting rules, pickup times, pending levies or logs..."
+                          placeholder="Ask about sorting rules, schedules, payments..."
                           className="flex-1 bg-transparent text-gray-800 text-xs focus:outline-none font-semibold px-2 py-1"
                         />
                         
                         <button 
                           type="button"
-                          className="w-7 h-7 rounded-lg flex items-center justify-center text-gray-400 hover:text-[#1E4D2B] transition-colors cursor-pointer select-none text-xs"
+                          className="w-7 h-7 rounded-lg hidden sm:flex items-center justify-center text-gray-400 hover:text-[#1E4D2B] transition-colors cursor-pointer select-none text-xs"
                           title="Scope: Greenfield System only"
                         >
                           🔒

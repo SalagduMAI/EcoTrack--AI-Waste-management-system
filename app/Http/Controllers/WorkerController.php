@@ -157,7 +157,7 @@ class WorkerController extends Controller
 
         $validator = Validator::make($request->all(), [
             'reason' => 'required|string|min:5',
-            'photo' => 'nullable|image|mimes:jpeg,png,jpg,webp|max:3072', // Max 3MB
+            'photo' => 'nullable|image|mimes:jpeg,png,jpg,webp|max:10240', // Max 10MB
             'lat' => 'nullable|numeric',
             'lng' => 'nullable|numeric',
         ]);

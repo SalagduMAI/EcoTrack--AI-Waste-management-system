@@ -16,5 +16,10 @@ class KnowledgeBase extends Model
         'content',
         'category',
         'tags',
+        'embedding',
+    ];
+
+    protected $casts = [
+        'embedding' => 'array',
     ];
 }

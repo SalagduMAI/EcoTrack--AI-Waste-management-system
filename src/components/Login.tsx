@@ -350,7 +350,7 @@ export default function Login({ onLoginSuccess }: LoginProps) {
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="ruwan@ecotrack.lk"
+                  placeholder="ecotrack@gmail.lk"
                   className="w-full bg-transparent border-none text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-0 text-sm p-0"
                   required
                 />

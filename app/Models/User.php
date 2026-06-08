@@ -27,6 +27,17 @@ class User extends Authenticatable
         'shift',
         'status',
         'profile_photo_path',
+        'nic',
+        'move_in_date',
+        'occupancy_type',
+        'household_members',
+        'recycling_plan',
+        'whatsapp_enabled',
+        'assistance_required',
+        'emergency_contact_name',
+        'emergency_contact_phone',
+        'notes',
+        'language',
     ];
 
     /**
