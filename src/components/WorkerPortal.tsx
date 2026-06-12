@@ -12,9 +12,10 @@ interface WorkerPortalProps {
   token: string;
   user: any;
   onLogout: () => void;
+  onUserUpdate?: (user: any) => void;
 }
 
-export default function WorkerPortal({ token, user, onLogout }: WorkerPortalProps) {
+export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: WorkerPortalProps) {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'tasks' | 'scan' | 'history' | 'notifications' | 'offline' | 'profile' | 'settings'>('dashboard');
   const [settingsSubTab, setSettingsSubTab] = useState<'profile' | 'security' | 'help'>('profile');
   const [showLogoutConfirmModal, setShowLogoutConfirmModal] = useState(false);
@@ -47,7 +48,7 @@ export default function WorkerPortal({ token, user, onLogout }: WorkerPortalProp
       setEditPhone(user.phone || localUser?.phone || '+94 77 123 4567');
       setEditEmail(user.email || localUser?.email || 'sunil.k@ecotrack.lk');
       setEditShift(user.shift || localUser?.shift || 'Morning');
-      setEditAvatarUrl(user.avatarUrl || localUser?.avatarUrl || defaultAvatar);
+      setEditAvatarUrl(user.profile_photo_url || user.avatarUrl || localUser?.profile_photo_url || localUser?.avatarUrl || defaultAvatar);
     }
   }, [user]);
 
@@ -57,7 +58,8 @@ export default function WorkerPortal({ token, user, onLogout }: WorkerPortalProp
   const [editPhone, setEditPhone] = useState(localUser?.phone || '+94 77 123 4567');
   const [editEmail, setEditEmail] = useState(localUser?.email || 'sunil.k@ecotrack.lk');
   const [editShift, setEditShift] = useState(localUser?.shift || 'Morning');
-  const [editAvatarUrl, setEditAvatarUrl] = useState(localUser?.avatarUrl || defaultAvatar);
+  const [editAvatarUrl, setEditAvatarUrl] = useState(localUser?.profile_photo_url || localUser?.avatarUrl || defaultAvatar);
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
 
   // Change Password modal states
   const [isChangePasswordModalOpen, setIsChangePasswordModalOpen] = useState(false);
@@ -74,11 +76,57 @@ export default function WorkerPortal({ token, user, onLogout }: WorkerPortalProp
   const [activeQueueDropdownId, setActiveQueueDropdownId] = useState<number | null>(null);
   
   const [notifications, setNotifications] = useState<any[]>([]);
+  const [dashboardStats, setDashboardStats] = useState<any>(null);
+  const [weather, setWeather] = useState<{ temp: number; description: string; wind: string } | null>(null);
 
   const [notificationFilter, setNotificationFilter] = useState<'all' | 'job' | 'rating' | 'announcement' | 'incident'>('all');
   
   const [tasks, setTasks] = useState<any[]>([]);
   const [history, setHistory] = useState<any[]>([]);
+
+  // Dynamically calculate completed jobs for the last 7 days from tasks and history states
+  const last7DaysStats = React.useMemo(() => {
+    const days = [];
+    const today = new Date();
+    
+    // Combine tasks (today's jobs) and history (past jobs)
+    const allCompletedJobs = [
+      ...tasks.filter(t => t.status === 'done'),
+      ...history.filter(h => h.status === 'done')
+    ];
+    
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(today.getDate() - i);
+      const dateStr = d.toISOString().slice(0, 10); // YYYY-MM-DD
+      const dayName = d.toLocaleDateString('en-US', { weekday: 'short' });
+      
+      // Count completed jobs on this date
+      const count = allCompletedJobs.filter(j => {
+        const jobDate = j.scheduled_date ? j.scheduled_date.slice(0, 10) : '';
+        return jobDate === dateStr;
+      }).length;
+      
+      days.push({
+        day: dayName,
+        date: dateStr,
+        tasks: count,
+        isCurrent: i === 0
+      });
+    }
+    
+    // Calculate percentages relative to max value to scale heights dynamically
+    const maxTasks = Math.max(...days.map(d => d.tasks), 1);
+    return days.map(d => {
+      // Scale height between 10% and 100%
+      const pct = Math.max(10, Math.round((d.tasks / maxTasks) * 100));
+      return {
+        ...d,
+        percent: `${pct}%`,
+        label: `${d.day}${d.isCurrent ? ' (Today)' : ''}: ${d.tasks} jobs`
+      };
+    });
+  }, [tasks, history]);
   const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'warn' | 'warning' | 'info' | 'error' } | null>(null);
@@ -395,11 +443,13 @@ export default function WorkerPortal({ token, user, onLogout }: WorkerPortalProp
     }
   };
 
-  const persistWorkerData = (nextTasks: any[], nextHistory: any[]) => {
+  const persistWorkerData = (nextTasks: any[], nextHistory: any[], nextStats: any) => {
     try {
+      const cached = getCachedWorkerData() || {};
       localStorage.setItem('ecotrack_worker_data', JSON.stringify({
         tasks: nextTasks,
         history: nextHistory,
+        dashboardStats: nextStats || cached.dashboardStats,
         syncedAt: new Date().toISOString()
       }));
     } catch (err) {
@@ -418,13 +468,15 @@ export default function WorkerPortal({ token, user, onLogout }: WorkerPortalProp
         'Accept': 'application/json'
       };
 
-      const [tasksRes, histRes] = await Promise.all([
+      const [tasksRes, histRes, statsRes] = await Promise.all([
         fetch('/api/worker/tasks', { headers }).catch(() => null),
         fetch('/api/worker/history', { headers }).catch(() => null),
+        fetch('/api/worker/dashboard-stats', { headers }).catch(() => null),
       ]);
 
       const tasksData = tasksRes && tasksRes.ok ? await tasksRes.json() : null;
       const histData = histRes && histRes.ok ? await histRes.json() : null;
+      const statsData = statsRes && statsRes.ok ? await statsRes.json() : null;
 
       const nextTasks = tasksData?.status === 'success' && Array.isArray(tasksData.data?.tasks)
         ? tasksData.data.tasks
@@ -438,6 +490,10 @@ export default function WorkerPortal({ token, user, onLogout }: WorkerPortalProp
           ? histData.data
           : null;
 
+      const nextStats = statsData?.status === 'success' && statsData.data
+        ? statsData.data
+        : null;
+
       const cached = getCachedWorkerData();
 
       if (nextTasks) {
@@ -446,15 +502,23 @@ export default function WorkerPortal({ token, user, onLogout }: WorkerPortalProp
       if (nextHistory) {
         setHistory(nextHistory);
       }
-
-      if (nextTasks || nextHistory) {
-        persistWorkerData(nextTasks ?? cached?.tasks ?? [], nextHistory ?? cached?.history ?? []);
+      if (nextStats) {
+        setDashboardStats(nextStats);
       }
 
-      if (!nextTasks || !nextHistory) {
+      if (nextTasks || nextHistory || nextStats) {
+        persistWorkerData(
+          nextTasks ?? cached?.tasks ?? [],
+          nextHistory ?? cached?.history ?? [],
+          nextStats ?? cached?.dashboardStats ?? null
+        );
+      }
+
+      if (!nextTasks || !nextHistory || !nextStats) {
         if (cached) {
           if (!nextTasks) setTasks(cached.tasks || []);
           if (!nextHistory) setHistory(cached.history || []);
+          if (!nextStats) setDashboardStats(cached.dashboardStats || null);
           setMessage({ text: 'Using cached worker data because the server refresh did not return complete results.', type: 'warn' });
         } else {
           setMessage({ text: 'Unable to refresh worker data from the server. Please check the connection and try again.', type: 'error' });
@@ -466,6 +530,7 @@ export default function WorkerPortal({ token, user, onLogout }: WorkerPortalProp
       if (cached) {
         setTasks(cached.tasks || []);
         setHistory(cached.history || []);
+        setDashboardStats(cached.dashboardStats || null);
         setMessage({ text: 'Using cached worker data because the server is currently unavailable.', type: 'warn' });
       } else {
         setMessage({ text: 'Unable to refresh worker data from the server. Please check the connection and try again.', type: 'error' });
@@ -487,6 +552,62 @@ export default function WorkerPortal({ token, user, onLogout }: WorkerPortalProp
       window.clearInterval(interval);
     };
   }, [token]);
+
+  // Fetch live weather data from open-meteo
+  useEffect(() => {
+    const fetchWeather = async () => {
+      try {
+        const response = await fetch('https://api.open-meteo.com/v1/forecast?latitude=6.9271&longitude=79.8612&current=temperature_2m,weather_code,wind_speed_10m');
+        if (response.ok) {
+          const data = await response.json();
+          if (data && data.current) {
+            const temp = Math.round(data.current.temperature_2m);
+            const wind = Math.round(data.current.wind_speed_10m);
+            const code = data.current.weather_code;
+            
+            // Map weather code to text description
+            let description = 'Sunny';
+            if (code === 0) description = 'Sunny';
+            else if (code >= 1 && code <= 3) description = 'Partly Cloudy';
+            else if (code >= 45 && code <= 48) description = 'Foggy';
+            else if (code >= 51 && code <= 55) description = 'Drizzle';
+            else if (code >= 61 && code <= 65) description = 'Rainy';
+            else if (code >= 80 && code <= 82) description = 'Rain Showers';
+            else if (code >= 95 && code <= 99) description = 'Thunderstorm';
+            else description = 'Cloudy';
+
+            setWeather({
+              temp,
+              description,
+              wind: `Wind ${wind} km/h`
+            });
+          }
+        }
+      } catch (err) {
+        console.warn('Weather fetch failed, using fallback', err);
+      }
+    };
+
+    fetchWeather();
+    const weatherInterval = setInterval(fetchWeather, 300000); // 5 mins
+    return () => clearInterval(weatherInterval);
+  }, []);
+
+  // Synchronize notifications from backend with local read and dismissed states
+  useEffect(() => {
+    if (dashboardStats?.notifications) {
+      const readNotifIds = JSON.parse(localStorage.getItem('ecotrack_read_notifications') || '[]');
+      const dismissedNotifIds = JSON.parse(localStorage.getItem('ecotrack_dismissed_notifications') || '[]');
+      
+      const parsedNotifications = dashboardStats.notifications
+        .filter((n: any) => !dismissedNotifIds.includes(n.id))
+        .map((n: any) => ({
+          ...n,
+          read: n.read || readNotifIds.includes(n.id)
+        }));
+      setNotifications(parsedNotifications);
+    }
+  }, [dashboardStats]);
 
   // Start Collection
   const handleMarkProgress = async (id: number) => {
@@ -643,6 +764,7 @@ export default function WorkerPortal({ token, user, onLogout }: WorkerPortalProp
         setMessage({ text: 'Image size should be less than 2MB.', type: 'error' });
         return;
       }
+      setAvatarFile(file);
       const reader = new FileReader();
       reader.onloadend = () => {
         if (typeof reader.result === 'string') {
@@ -654,20 +776,78 @@ export default function WorkerPortal({ token, user, onLogout }: WorkerPortalProp
   };
 
   // Save profile edits
-  const handleSaveProfile = (e: React.FormEvent) => {
+  const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
-    const updatedUser = {
-      ...localUser,
-      name: editName,
-      phone: editPhone,
-      email: editEmail,
-      shift: editShift,
-      avatarUrl: editAvatarUrl
-    };
-    setLocalUser(updatedUser);
-    localStorage.setItem('ecotrack_user_profile', JSON.stringify(updatedUser));
-    setMessage({ text: 'Profile details saved and updated successfully.', type: 'success' });
-    setIsEditProfileModalOpen(false);
+    setActionLoading(true);
+    setMessage(null);
+
+    try {
+      let photoUrl = editAvatarUrl;
+
+      // 1. Upload photo if selected
+      if (avatarFile) {
+        const formData = new FormData();
+        formData.append('photo', avatarFile);
+        
+        const photoRes = await fetch('/api/profile/photo', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Accept': 'application/json'
+          },
+          body: formData
+        });
+
+        const photoData = await photoRes.json().catch(() => null);
+        if (!photoRes.ok) {
+          throw new Error(photoData?.message || 'Failed to upload profile photo.');
+        }
+        photoUrl = photoData.data?.profile_photo_url || photoUrl;
+      }
+
+      // 2. Update profile text details
+      const updateRes = await fetch('/api/profile/update', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          name: editName,
+          phone: editPhone
+        })
+      });
+
+      const updateData = await updateRes.json().catch(() => null);
+      if (!updateRes.ok) {
+        throw new Error(updateData?.message || 'Failed to update profile details.');
+      }
+
+      // 3. Update local state & storage
+      const updatedUser = {
+        ...localUser,
+        name: editName,
+        phone: editPhone,
+        avatarUrl: photoUrl,
+        profile_photo_url: photoUrl
+      };
+      
+      setLocalUser(updatedUser);
+      localStorage.setItem('ecotrack_user_profile', JSON.stringify(updatedUser));
+      if (onUserUpdate) {
+        onUserUpdate(updatedUser);
+      }
+      setAvatarFile(null);
+      
+      setMessage({ text: 'Profile details saved and updated successfully.', type: 'success' });
+      setIsEditProfileModalOpen(false);
+    } catch (err: any) {
+      console.error(err);
+      setMessage({ text: err.message || 'An error occurred while saving profile.', type: 'error' });
+    } finally {
+      setActionLoading(false);
+    }
   };
 
   // Change password handler
@@ -965,7 +1145,7 @@ export default function WorkerPortal({ token, user, onLogout }: WorkerPortalProp
                 title="View Profile"
               >
                 <img 
-                  src={localUser?.avatarUrl || defaultAvatar} 
+                  src={localUser?.profile_photo_url || localUser?.avatarUrl || defaultAvatar} 
                   referrerPolicy="no-referrer" 
                   alt={localUser?.name || 'Worker'} 
                   className="w-full h-full object-cover" 
@@ -1067,7 +1247,7 @@ export default function WorkerPortal({ token, user, onLogout }: WorkerPortalProp
                 <div className="flex items-center gap-3 mb-3">
                   <div className="w-8 h-8 rounded-full overflow-hidden border border-[#1E4D2B] shadow-sm shrink-0">
                     <img 
-                      src={localUser?.avatarUrl || defaultAvatar} 
+                      src={localUser?.profile_photo_url || localUser?.avatarUrl || defaultAvatar} 
                       referrerPolicy="no-referrer" 
                       alt={localUser?.name || 'Worker'} 
                       className="w-full h-full object-cover" 
@@ -1131,6 +1311,11 @@ export default function WorkerPortal({ token, user, onLogout }: WorkerPortalProp
                     {notifications.length > 0 && (
                       <button
                         onClick={() => {
+                          const readNotifIds = JSON.parse(localStorage.getItem('ecotrack_read_notifications') || '[]');
+                          notifications.forEach(n => {
+                            if (!readNotifIds.includes(n.id)) readNotifIds.push(n.id);
+                          });
+                          localStorage.setItem('ecotrack_read_notifications', JSON.stringify(readNotifIds));
                           setNotifications(notifications.map(n => ({ ...n, read: true })));
                           setMessage({ text: "All notifications marked as read.", type: 'success' });
                         }}
@@ -1287,6 +1472,11 @@ export default function WorkerPortal({ token, user, onLogout }: WorkerPortalProp
                         <button
                           type="button"
                           onClick={() => {
+                            const readNotifIds = JSON.parse(localStorage.getItem('ecotrack_read_notifications') || '[]');
+                            notifications.forEach(n => {
+                              if (!readNotifIds.includes(n.id)) readNotifIds.push(n.id);
+                            });
+                            localStorage.setItem('ecotrack_read_notifications', JSON.stringify(readNotifIds));
                             setNotifications(notifications.map(n => ({ ...n, read: true })));
                             setMessage({ text: "All notifications marked as read.", type: 'success' });
                           }}
@@ -1333,6 +1523,11 @@ export default function WorkerPortal({ token, user, onLogout }: WorkerPortalProp
                               key={notif.id}
                               className={`p-3 flex gap-3 hover:bg-slate-50 transition-all cursor-pointer ${notif.read ? 'opacity-70 bg-white' : 'bg-emerald-50/10'}`}
                               onClick={() => {
+                                const readNotifIds = JSON.parse(localStorage.getItem('ecotrack_read_notifications') || '[]');
+                                if (!readNotifIds.includes(notif.id)) {
+                                  readNotifIds.push(notif.id);
+                                  localStorage.setItem('ecotrack_read_notifications', JSON.stringify(readNotifIds));
+                                }
                                 setNotifications(notifications.map(n => n.id === notif.id ? { ...n, read: true } : n));
                                 setActiveTab('notifications');
                                 setIsNotificationDropdownOpen(false);
@@ -1361,6 +1556,11 @@ export default function WorkerPortal({ token, user, onLogout }: WorkerPortalProp
                                 type="button"
                                 onClick={(e) => {
                                   e.stopPropagation();
+                                  const dismissedNotifIds = JSON.parse(localStorage.getItem('ecotrack_dismissed_notifications') || '[]');
+                                  if (!dismissedNotifIds.includes(notif.id)) {
+                                    dismissedNotifIds.push(notif.id);
+                                    localStorage.setItem('ecotrack_dismissed_notifications', JSON.stringify(dismissedNotifIds));
+                                  }
                                   setNotifications(notifications.filter(n => n.id !== notif.id));
                                 }}
                                 className="text-gray-300 hover:text-red-550 transition-colors self-start p-1 hover:bg-gray-100 rounded shrink-0 cursor-pointer"
@@ -1382,6 +1582,11 @@ export default function WorkerPortal({ token, user, onLogout }: WorkerPortalProp
                         <button
                           type="button"
                           onClick={() => {
+                            const dismissedNotifIds = JSON.parse(localStorage.getItem('ecotrack_dismissed_notifications') || '[]');
+                            notifications.forEach(n => {
+                              if (!dismissedNotifIds.includes(n.id)) dismissedNotifIds.push(n.id);
+                            });
+                            localStorage.setItem('ecotrack_dismissed_notifications', JSON.stringify(dismissedNotifIds));
                             setNotifications([]);
                             setMessage({ text: "Cleared all alerts.", type: 'success' });
                           }}
@@ -1406,7 +1611,7 @@ export default function WorkerPortal({ token, user, onLogout }: WorkerPortalProp
                 }}
               >
                 <img 
-                  src={localUser?.avatarUrl || defaultAvatar} 
+                  src={localUser?.profile_photo_url || localUser?.avatarUrl || defaultAvatar} 
                   referrerPolicy="no-referrer" 
                   alt={localUser?.name || 'Worker'} 
                   className="w-full h-full object-cover" 
@@ -1426,7 +1631,7 @@ export default function WorkerPortal({ token, user, onLogout }: WorkerPortalProp
                     <div className="p-2.5 border-b border-gray-100 flex items-center gap-2.5">
                       <div className="w-8 h-8 rounded-full overflow-hidden border border-emerald-600">
                         <img 
-                          src={localUser?.avatarUrl || defaultAvatar} 
+                          src={localUser?.profile_photo_url || localUser?.avatarUrl || defaultAvatar} 
                           referrerPolicy="no-referrer" 
                           alt={localUser?.name || 'Worker'} 
                           className="w-full h-full object-cover" 
@@ -1614,7 +1819,7 @@ export default function WorkerPortal({ token, user, onLogout }: WorkerPortalProp
                     <span className="inline-block text-[9px] font-black bg-[#EBFDF2] text-[#166534] px-1.5 py-0.5 rounded-md mb-3 group-hover:bg-[#1E4D2B] group-hover:text-white transition-colors">
                       +1.2%
                     </span>
-                    <p className="text-xl font-black text-gray-950 mt-1">94%</p>
+                    <p className="text-xl font-black text-gray-950 mt-1">{dashboardStats?.metrics?.on_time_pct ?? 95}%</p>
                     <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mt-0.5">On-time</p>
                   </div>
                   <span className="text-[10px] text-gray-500 font-bold mt-3 group-hover:text-gray-800 transition-colors">30-day avg</span>
@@ -1630,10 +1835,10 @@ export default function WorkerPortal({ token, user, onLogout }: WorkerPortalProp
                     <span className="inline-block text-[9px] font-black bg-[#FEF3C7] text-[#D97706] px-1.5 py-0.5 rounded-md mb-3 group-hover:bg-amber-500 group-hover:text-white transition-colors">
                       Steady
                     </span>
-                    <p className="text-xl font-black text-gray-950 mt-1">4.8 ★</p>
+                    <p className="text-xl font-black text-gray-950 mt-1">{dashboardStats?.metrics?.avg_rating ?? '4.8'} ★</p>
                     <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mt-0.5">Rating</p>
                   </div>
-                  <span className="text-[10px] text-gray-500 font-bold mt-3 group-hover:text-gray-800 transition-colors">212 ratings</span>
+                  <span className="text-[10px] text-gray-500 font-bold mt-3 group-hover:text-gray-800 transition-colors">{dashboardStats?.metrics?.rating_count ?? 0} ratings</span>
                 </div>
 
                 {/* Metric 4 */}
@@ -1646,7 +1851,7 @@ export default function WorkerPortal({ token, user, onLogout }: WorkerPortalProp
                     <span className="inline-block text-[9px] font-black bg-[#E3F2FD] text-[#0D47A1] px-1.5 py-0.5 rounded-md mb-3 group-hover:bg-blue-600 group-hover:text-white transition-colors">
                       Top 10%
                     </span>
-                    <p className="text-xl font-black text-gray-950 mt-1">5 ★</p>
+                    <p className="text-xl font-black text-gray-950 mt-1">{dashboardStats?.metrics?.eco_score ?? '5.0'} ★</p>
                     <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mt-0.5">Eco Score</p>
                   </div>
                   <span className="text-[10px] text-gray-500 font-bold mt-3 group-hover:text-gray-800 transition-colors">Recycle rate</span>
@@ -1662,7 +1867,7 @@ export default function WorkerPortal({ token, user, onLogout }: WorkerPortalProp
                     <span className="inline-block text-[9px] font-black bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded-md mb-3 group-hover:bg-slate-700 group-hover:text-white transition-colors">
                       Of 4 km est.
                     </span>
-                    <p className="text-xl font-black text-gray-950 mt-1">1.4 km</p>
+                    <p className="text-xl font-black text-gray-950 mt-1">{dashboardStats?.metrics?.distance_today ?? '0.0'} km</p>
                     <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mt-0.5">Distance</p>
                   </div>
                   <span className="text-[10px] text-gray-500 font-bold mt-3 group-hover:text-gray-800 transition-colors">Walked today</span>
@@ -1697,71 +1902,107 @@ export default function WorkerPortal({ token, user, onLogout }: WorkerPortalProp
                       {/* Vertical line connector */}
                       <div className="absolute left-[13px] top-6 bottom-6 w-0.5 bg-slate-100"></div>
 
+                      {/* Shift Started step */}
                       <div className="flex items-center justify-between text-xs">
                         <div className="flex items-center gap-3">
                           <div className="w-7 h-7 bg-[#EBFDF2] border-2 border-emerald-500 rounded-full flex items-center justify-center text-emerald-600 font-mono text-[10px] font-black z-10 shrink-0">
                             D
                           </div>
-                          <span className="font-bold text-gray-400 font-mono w-10 text-left">06:00</span>
+                          <span className="font-bold text-gray-400 font-mono w-10 text-left">
+                            {(localUser?.shift?.toLowerCase() || '').includes('evening') ? '14:00' : 
+                             (localUser?.shift?.toLowerCase() || '').includes('night') ? '20:00' : '08:00'}
+                          </span>
                           <span className="font-extrabold text-gray-900">Shift started</span>
                         </div>
                         <span className="text-[10px] font-black text-emerald-700 bg-[#EBFDF2] px-2.5 py-0.5 rounded-full uppercase">Done</span>
                       </div>
 
-                      <div className="flex items-center justify-between text-xs">
-                        <div className="flex items-center gap-3">
-                          <div className="w-7 h-7 bg-[#EBFDF2] border-2 border-emerald-500 rounded-full flex items-center justify-center text-emerald-600 font-mono text-[10px] font-black z-10 shrink-0">
-                            ✓
-                          </div>
-                          <span className="font-bold text-gray-400 font-mono w-10 text-left">06:35</span>
-                          <span className="font-extrabold text-gray-900">A-301 collected</span>
-                        </div>
-                        <span className="text-[10px] font-black text-emerald-700 bg-[#EBFDF2] px-2.5 py-0.5 rounded-full uppercase">Done</span>
-                      </div>
+                      {/* Dynamic Tasks list */}
+                      {tasks && tasks.length > 0 ? (
+                        (() => {
+                          // Sort tasks: done -> in_progress -> issue -> pending
+                          const sortedTasks = [...tasks].sort((a, b) => {
+                            const weights: Record<string, number> = { done: 1, in_progress: 2, issue: 3, pending: 4 };
+                            const wA = weights[a.status] || 4;
+                            const wB = weights[b.status] || 4;
+                            if (wA !== wB) return wA - wB;
+                            return a.id - b.id;
+                          });
 
-                      <div className="flex items-center justify-between text-xs">
-                        <div className="flex items-center gap-3">
-                          <div className="w-7 h-7 bg-[#EBFDF2] border-2 border-emerald-500 rounded-full flex items-center justify-center text-emerald-600 font-mono text-[10px] font-black z-10 shrink-0">
-                            ✓
-                          </div>
-                          <span className="font-bold text-gray-400 font-mono w-10 text-left">06:42</span>
-                          <span className="font-extrabold text-[#1E4D2B]">A-302 collected</span>
-                        </div>
-                        <span className="text-[10px] font-black text-emerald-700 bg-[#EBFDF2] px-2.5 py-0.5 rounded-full uppercase">Done</span>
-                      </div>
+                          let firstPendingFound = false;
 
-                      <div className="flex items-center justify-between text-xs">
-                        <div className="flex items-center gap-3">
-                          <div className="w-7 h-7 bg-[#EFF6FF] border-2 border-blue-500 rounded-full flex items-center justify-center text-blue-600 font-mono text-[10px] font-black z-10 shrink-0 select-none animate-pulse">
-                            🏃‍♂️
-                          </div>
-                          <span className="font-bold text-gray-400 font-mono w-10 text-left">07:18</span>
-                          <span className="font-extrabold text-blue-800">A-303 in progress</span>
-                        </div>
-                        <span className="text-[10px] font-black text-blue-700 bg-[#EFF6FF] px-2.5 py-0.5 rounded-full uppercase">Active</span>
-                      </div>
+                          return sortedTasks.map((t, idx) => {
+                            let timeStr = '';
+                            if (t.completed_at || t.scanned_at) {
+                              try {
+                                const d = new Date(t.completed_at || t.scanned_at);
+                                timeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                              } catch {
+                                timeStr = '08:15';
+                              }
+                            } else {
+                              // Estimate time
+                              const startHour = (localUser?.shift?.toLowerCase() || '').includes('evening') ? 14 : 
+                                               (localUser?.shift?.toLowerCase() || '').includes('night') ? 20 : 8;
+                              const estMinutes = (idx + 1) * 12;
+                              const estHour = startHour + Math.floor(estMinutes / 60);
+                              const estMin = estMinutes % 60;
+                              timeStr = `${estHour.toString().padStart(2, '0')}:${estMin.toString().padStart(2, '0')}`;
+                            }
 
-                      <div className="flex items-center justify-between text-xs">
-                        <div className="flex items-center gap-3">
-                          <div className="w-7 h-7 bg-[#FFFBEB] border-2 border-amber-500 rounded-full flex items-center justify-center text-amber-600 font-mono text-[10px] font-black z-10 shrink-0">
-                            ⏱
-                          </div>
-                          <span className="font-bold text-gray-400 font-mono w-10 text-left">07:25</span>
-                          <span className="font-extrabold text-[#92400E]">A-304 next</span>
-                        </div>
-                        <span className="text-[10px] font-black text-amber-700 bg-[#FEF3C7] px-2.5 py-0.5 rounded-full uppercase">Up next</span>
-                      </div>
+                            // Style details based on status
+                            let iconContent = '✓';
+                            let iconClass = 'bg-[#EBFDF2] border-emerald-500 text-emerald-600';
+                            let textClass = 'text-gray-950 font-extrabold';
+                            let labelStr = `${t.unit?.unit_number || 'Floor Corridor'} collected`;
+                            let badgeClass = 'text-emerald-700 bg-[#EBFDF2]';
+                            let badgeText = 'Done';
 
-                      <div className="flex items-center justify-between text-xs">
-                        <div className="flex items-center gap-3">
-                          <div className="w-7 h-7 bg-slate-50 border-2 border-slate-300 rounded-full flex items-center justify-center text-slate-500 font-mono text-[10px] z-10 shrink-0">
-                            ➡
-                          </div>
-                          <span className="font-bold text-gray-450 font-mono w-10 text-left">08:00</span>
-                          <span className="font-semibold text-gray-500">Move to Floor 4</span>
-                        </div>
-                        <span className="text-[10px] font-black text-gray-500 bg-slate-100 px-2.5 py-0.5 rounded-full uppercase">Pending</span>
-                      </div>
+                            if (t.status === 'in_progress') {
+                              iconContent = '🏃‍♂️';
+                              iconClass = 'bg-[#EFF6FF] border-blue-500 text-blue-600 animate-pulse';
+                              textClass = 'text-blue-800 font-extrabold';
+                              labelStr = `${t.unit?.unit_number || 'Floor Corridor'} in progress`;
+                              badgeClass = 'text-blue-700 bg-[#EFF6FF]';
+                              badgeText = 'Active';
+                            } else if (t.status === 'issue') {
+                              iconContent = '⚠';
+                              iconClass = 'bg-[#FFF5F5] border-rose-500 text-rose-600';
+                              textClass = 'text-rose-800 font-extrabold';
+                              labelStr = `${t.unit?.unit_number || 'Floor Corridor'} skipped: ${t.issue_reason || 'Issue'}`;
+                              badgeClass = 'text-rose-700 bg-[#FFF5F5]';
+                              badgeText = 'Issue';
+                            } else if (t.status === 'pending') {
+                              const isNext = !firstPendingFound;
+                              firstPendingFound = true;
+
+                              iconContent = isNext ? '⏱' : '➡';
+                              iconClass = isNext 
+                                ? 'bg-[#FFFBEB] border-amber-500 text-amber-600' 
+                                : 'bg-slate-50 border-slate-300 text-slate-500';
+                              textClass = isNext ? 'text-[#92400E] font-extrabold' : 'text-gray-500 font-semibold';
+                              labelStr = isNext ? `${t.unit?.unit_number || 'Floor Corridor'} next` : `${t.unit?.unit_number || 'Floor Corridor'} pending`;
+                              badgeClass = isNext ? 'text-amber-700 bg-[#FEF3C7]' : 'text-gray-500 bg-slate-100';
+                              badgeText = isNext ? 'Up next' : 'Pending';
+                            }
+
+                            return (
+                              <div key={t.id} className="flex items-center justify-between text-xs">
+                                <div className="flex items-center gap-3">
+                                  <div className={`w-7 h-7 border-2 rounded-full flex items-center justify-center font-mono text-[10px] font-black z-10 shrink-0 ${iconClass}`}>
+                                    {iconContent}
+                                  </div>
+                                  <span className="font-bold text-gray-400 font-mono w-10 text-left">{timeStr}</span>
+                                  <span className={textClass}>{labelStr}</span>
+                                </div>
+                                <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase ${badgeClass}`}>{badgeText}</span>
+                              </div>
+                            );
+                          });
+                        })()
+                      ) : (
+                        <div className="py-4 text-center text-xs text-gray-400 font-bold">No route steps scheduled.</div>
+                      )}
                     </div>
                   </div>
 
@@ -1922,66 +2163,56 @@ export default function WorkerPortal({ token, user, onLogout }: WorkerPortalProp
                     </div>
 
                     <div className="space-y-2.5 pt-1">
-                      {/* User row */}
-                      <div className="flex items-center justify-between py-1 px-2 rounded-2xl bg-[#EBFDF2]/60 border border-emerald-100/50">
-                        <div className="flex items-center gap-2.5">
-                          <span className="w-5 h-5 bg-amber-400 text-white rounded-full flex items-center justify-center text-[10px] font-black">1</span>
-                          <div className="w-7 h-7 bg-emerald-700 text-white rounded-full flex items-center justify-center text-[9px] font-black">SK</div>
-                          <div>
-                            <p className="text-xs font-black text-gray-900 leading-tight">Sunil Kumara</p>
-                            <span className="text-[9px] text-emerald-800 font-bold">You</span>
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-[10px] font-black text-gray-800 leading-none">312 jobs</p>
-                          <span className="text-[9px] text-[#2E7D32]/80 font-mono">4.8 ★</span>
-                        </div>
-                      </div>
+                      {dashboardStats?.leaderboard && dashboardStats.leaderboard.length > 0 ? (
+                        dashboardStats.leaderboard.slice(0, 5).map((row: any) => {
+                          const isCurrent = row.is_current;
+                          const rankColor = 
+                            row.rank === 1 ? 'bg-amber-400 text-white' :
+                            row.rank === 2 ? 'bg-slate-300 text-gray-700' :
+                            row.rank === 3 ? 'bg-orange-400 text-white' :
+                            'bg-emerald-100 text-[#1E4D2B]';
 
-                      {/* Rank 2 */}
-                      <div className="flex items-center justify-between py-1 px-2 rounded-2xl bg-white hover:bg-[#F9FCFA]">
-                        <div className="flex items-center gap-2.5">
-                          <span className="w-5 h-5 bg-slate-205 text-gray-500 rounded-full flex items-center justify-center text-[10px] font-bold">2</span>
-                          <div className="w-7 h-7 bg-[#2E7D32]/10 text-[#2E7D32] rounded-full flex items-center justify-center text-[9px] font-bold">NP</div>
-                          <div>
-                            <p className="text-xs font-bold text-gray-800 leading-tight">Nimal P.</p>
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-[10px] font-semibold text-gray-600 leading-none">298 jobs</p>
-                          <span className="text-[9px] text-gray-400 font-mono">4.7 ★</span>
-                        </div>
-                      </div>
-
-                      {/* Rank 3 */}
-                      <div className="flex items-center justify-between py-1 px-2 rounded-2xl bg-white hover:bg-[#F9FCFA]">
-                        <div className="flex items-center gap-2.5">
-                          <span className="w-5 h-5 bg-orange-400 text-white rounded-full flex items-center justify-center text-[10px] font-bold">3</span>
-                          <div className="w-7 h-7 bg-amber-600/10 text-amber-700 rounded-full flex items-center justify-center text-[9px] font-bold">RS</div>
-                          <div>
-                            <p className="text-xs font-bold text-gray-800 leading-tight">Ravi S.</p>
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-[10px] font-semibold text-gray-600 leading-none">276 jobs</p>
-                          <span className="text-[9px] text-gray-400 font-mono">4.6 ★</span>
-                        </div>
-                      </div>
-
-                      {/* Rank 4 */}
-                      <div className="flex items-center justify-between py-1 px-2 rounded-2xl bg-white hover:bg-[#F9FCFA]">
-                        <div className="flex items-center gap-2.5">
-                          <span className="w-5 h-5 bg-emerald-100 text-[#1E4D2B] rounded-full flex items-center justify-center text-[10px] font-bold">4</span>
-                          <div className="w-7 h-7 bg-indigo-50 text-indigo-700 rounded-full flex items-center justify-center text-[9px] font-bold">KW</div>
-                          <div>
-                            <p className="text-xs font-bold text-gray-800 leading-tight">Kasun W.</p>
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-[10px] font-semibold text-gray-600 leading-none">254 jobs</p>
-                          <span className="text-[9px] text-gray-400 font-mono">4.5 ★</span>
-                        </div>
-                      </div>
+                          return (
+                            <div 
+                              key={row.id} 
+                              className={`flex items-center justify-between py-1 px-2 rounded-2xl transition-all ${
+                                isCurrent 
+                                  ? 'bg-[#EBFDF2]/60 border border-emerald-100/50 font-semibold' 
+                                  : 'bg-white hover:bg-[#F9FCFA]'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2.5">
+                                <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black ${rankColor}`}>
+                                  {row.rank}
+                                </span>
+                                <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[9px] font-black ${
+                                  isCurrent ? 'bg-emerald-700 text-white' : 'bg-[#2E7D32]/10 text-[#2E7D32]'
+                                }`}>
+                                  {row.initials}
+                                </div>
+                                <div>
+                                  <p className={`text-xs leading-tight ${isCurrent ? 'font-black text-gray-900' : 'font-bold text-gray-800'}`}>
+                                    {row.name}
+                                  </p>
+                                  {isCurrent && (
+                                    <span className="text-[9px] text-emerald-800 font-bold">You</span>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="text-right">
+                                <p className={`text-[10px] leading-none ${isCurrent ? 'font-black text-gray-800' : 'font-semibold text-gray-600'}`}>
+                                  {row.completed_jobs} jobs
+                                </p>
+                                <span className={`text-[9px] font-mono ${isCurrent ? 'text-[#2E7D32]/80' : 'text-gray-450'}`}>
+                                  {row.rating} ★
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })
+                      ) : (
+                        <div className="py-4 text-center text-xs text-gray-400 font-bold">Loading ranking...</div>
+                      )}
                     </div>
                   </div>
 
@@ -1989,8 +2220,12 @@ export default function WorkerPortal({ token, user, onLogout }: WorkerPortalProp
                   <div className="p-4 bg-orange-50/55 border border-orange-100 rounded-3xl flex justify-between items-center shadow-xs" id="weather-block">
                     <div className="space-y-1">
                       <span className="text-[9px] font-extrabold text-[#9A3412] tracking-wider block uppercase">Colombo, LK</span>
-                      <h4 className="text-xl font-black text-[#7C2D12]">28°C • Sunny</h4>
-                      <p className="text-[10px] text-[#9A3412] font-semibold leading-tight">Light breeze 8 km/h</p>
+                      <h4 className="text-xl font-black text-[#7C2D12]">
+                        {weather ? `${weather.temp}°C • ${weather.description}` : '28°C • Sunny'}
+                      </h4>
+                      <p className="text-[10px] text-[#9A3412] font-semibold leading-tight">
+                        {weather ? weather.wind : 'Light breeze 8 km/h'}
+                      </p>
                     </div>
                     <div className="p-2.5 bg-amber-400 text-white rounded-2xl">
                       <Sun className="w-6 h-6 animate-pulse" />
@@ -2028,56 +2263,32 @@ export default function WorkerPortal({ token, user, onLogout }: WorkerPortalProp
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-1" id="feedback-deck">
-                  {/* Card 1 */}
-                  <div className="p-4 bg-[#F2F7F4]/60 border border-emerald-100/40 rounded-2xl flex flex-col justify-between space-y-3">
-                    <div className="space-y-1.5 text-xs text-gray-700 leading-relaxed font-semibold italic">
-                      "Always punctual and very polite. Thanks!"
-                    </div>
-                    <div className="flex items-center justify-between border-t border-emerald-100/30 pt-2.5">
-                      <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 bg-slate-200 rounded-full flex items-center justify-center text-[10px] font-bold">AR</div>
-                        <div>
-                          <p className="text-[10px] font-black text-gray-800 leading-none">Amaya R.</p>
-                          <span className="text-[8px] text-gray-400 leading-none">A-301 • 2d ago</span>
+                  {dashboardStats?.feedback && dashboardStats.feedback.length > 0 ? (
+                    dashboardStats.feedback.slice(0, 3).map((row: any) => {
+                      const stars = '★'.repeat(row.rating) + '☆'.repeat(5 - row.rating);
+                      return (
+                        <div key={row.id} className="p-4 bg-[#F2F7F4]/60 border border-emerald-100/40 rounded-2xl flex flex-col justify-between space-y-3">
+                          <div className="space-y-1.5 text-xs text-gray-700 leading-relaxed font-semibold italic">
+                            "{row.feedback}"
+                          </div>
+                          <div className="flex items-center justify-between border-t border-emerald-100/30 pt-2.5">
+                            <div className="flex items-center gap-2">
+                              <div className="w-6 h-6 bg-slate-200 rounded-full flex items-center justify-center text-[10px] font-bold">{row.resident_initials}</div>
+                              <div>
+                                <p className="text-[10px] font-black text-gray-800 leading-none">{row.resident_name}</p>
+                                <span className="text-[8px] text-gray-400 leading-none">{row.unit_number} • {row.time_ago}</span>
+                              </div>
+                            </div>
+                            <span className="text-[9px] text-amber-500 font-mono">{stars}</span>
+                          </div>
                         </div>
-                      </div>
-                      <span className="text-[9px] text-amber-500 font-mono">★★★★★</span>
+                      );
+                    })
+                  ) : (
+                    <div className="col-span-3 py-8 text-center text-xs text-gray-400 font-bold bg-[#F2F7F4]/40 border border-emerald-100/20 rounded-2xl">
+                      No feedback submitted by residents yet.
                     </div>
-                  </div>
-
-                  {/* Card 2 */}
-                  <div className="p-4 bg-[#F2F7F4]/60 border border-emerald-100/40 rounded-2xl flex flex-col justify-between space-y-3">
-                    <div className="space-y-1.5 text-xs text-gray-700 leading-relaxed font-semibold italic">
-                      "Good service, but please be quieter early morning."
-                    </div>
-                    <div className="flex items-center justify-between border-t border-emerald-100/30 pt-2.5">
-                      <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 bg-slate-200 rounded-full flex items-center justify-center text-[10px] font-bold">PJ</div>
-                        <div>
-                          <p className="text-[10px] font-black text-gray-800 leading-none">Priya J.</p>
-                          <span className="text-[8px] text-gray-400 leading-none">A-304 • 5d ago</span>
-                        </div>
-                      </div>
-                      <span className="text-[9px] text-amber-500 font-mono">★★★★☆</span>
-                    </div>
-                  </div>
-
-                  {/* Card 3 */}
-                  <div className="p-4 bg-[#F2F7F4]/60 border border-emerald-100/40 rounded-2xl flex flex-col justify-between space-y-3">
-                    <div className="space-y-1.5 text-xs text-gray-700 leading-relaxed font-semibold italic">
-                      "Excellent work as always! Keep it up!"
-                    </div>
-                    <div className="flex items-center justify-between border-t border-emerald-100/30 pt-2.5">
-                      <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 bg-slate-200 rounded-full flex items-center justify-center text-[10px] font-bold">KW</div>
-                        <div>
-                          <p className="text-[10px] font-black text-gray-800 leading-none">Kasun W.</p>
-                          <span className="text-[8px] text-gray-400 leading-none">A-410 • 1w ago</span>
-                        </div>
-                      </div>
-                      <span className="text-[9px] text-amber-500 font-mono">★★★★★</span>
-                    </div>
-                  </div>
+                  )}
                 </div>
               </div>
 
@@ -3834,6 +4045,11 @@ export default function WorkerPortal({ token, user, onLogout }: WorkerPortalProp
                             key={notif.id}
                             onClick={() => {
                               if (!notif.read) {
+                                const readNotifIds = JSON.parse(localStorage.getItem('ecotrack_read_notifications') || '[]');
+                                if (!readNotifIds.includes(notif.id)) {
+                                  readNotifIds.push(notif.id);
+                                  localStorage.setItem('ecotrack_read_notifications', JSON.stringify(readNotifIds));
+                                }
                                 setNotifications(notifications.map(n => n.id === notif.id ? { ...n, read: true } : n));
                               }
                             }}
@@ -4160,9 +4376,9 @@ export default function WorkerPortal({ token, user, onLogout }: WorkerPortalProp
                   <div className="bg-[#1E4D2B] rounded-2xl p-6 text-center text-white flex flex-col items-center justify-center space-y-4">
                     {/* Circle image or initials identifier representing profile picture */}
                     <div className="w-20 h-20 bg-white text-[#1E4D2B] rounded-full flex items-center justify-center font-black text-2xl shadow-sm select-none overflow-hidden border-2 border-white relative group">
-                      {localUser?.avatarUrl ? (
+                      {(localUser?.profile_photo_url || localUser?.avatarUrl) ? (
                         <img 
-                          src={localUser?.avatarUrl} 
+                          src={localUser?.profile_photo_url || localUser?.avatarUrl} 
                           alt={localUser?.name || 'Worker'} 
                           className="w-full h-full object-cover"
                           referrerPolicy="no-referrer" 
@@ -4178,17 +4394,30 @@ export default function WorkerPortal({ token, user, onLogout }: WorkerPortalProp
                         {localUser?.name || 'Sunil Kumara'}
                       </h2>
                       <p className="text-xs text-[#E3EFE5]/90 font-bold font-sans">
-                        {localUser?.shift || 'Morning'} Shift - 6AM-2PM
+                        {localUser?.shift || 'Morning'} Shift - {
+                          (localUser?.shift?.toLowerCase() || '').includes('evening') ? '2PM-10PM' : 
+                          (localUser?.shift?.toLowerCase() || '').includes('night') ? '10PM-6AM' : '6AM-2PM'
+                        }
                       </p>
                     </div>
 
                     {/* Stars group */}
                     <div className="flex items-center justify-center gap-1">
-                      {[1, 2, 3, 4, 5].map((s) => (
-                        <Star key={s} className="w-4 h-4 fill-amber-400 stroke-amber-400" />
-                      ))}
+                      {[1, 2, 3, 4, 5].map((s) => {
+                        const score = dashboardStats?.metrics?.avg_rating !== undefined && dashboardStats?.metrics?.avg_rating !== null ? dashboardStats.metrics.avg_rating : 0.0;
+                        return (
+                          <Star 
+                            key={s} 
+                            className={`w-4 h-4 ${
+                              s <= Math.round(score) 
+                                ? 'fill-amber-400 stroke-amber-400' 
+                                : 'stroke-white/40 fill-transparent'
+                            }`} 
+                          />
+                        );
+                      })}
                       <span className="text-xs font-black text-white ml-1.5 bg-black/15 py-0.5 px-2 rounded-full font-sans">
-                        4.8 <span className="text-white/60 font-semibold">(212)</span>
+                        {dashboardStats?.metrics?.avg_rating !== undefined && dashboardStats?.metrics?.avg_rating !== null ? dashboardStats.metrics.avg_rating : '0.0'} <span className="text-white/60 font-semibold">({dashboardStats?.metrics?.rating_count !== undefined && dashboardStats?.metrics?.rating_count !== null ? dashboardStats.metrics.rating_count : 0})</span>
                       </span>
                     </div>
                   </div>
@@ -4201,7 +4430,9 @@ export default function WorkerPortal({ token, user, onLogout }: WorkerPortalProp
                       <div className="w-8 h-8 rounded-full bg-emerald-50 flex items-center justify-center mb-1.5">
                         <CheckCircle className="w-4 h-4 text-emerald-600 stroke-[2.2]" />
                       </div>
-                      <span className="text-sm font-black text-slate-800 font-sans tracking-tight">312</span>
+                      <span className="text-sm font-black text-slate-800 font-sans tracking-tight">
+                        {dashboardStats?.leaderboard?.find((w: any) => w.is_current)?.completed_jobs !== undefined && dashboardStats?.leaderboard?.find((w: any) => w.is_current)?.completed_jobs !== null ? dashboardStats.leaderboard.find((w: any) => w.is_current).completed_jobs : 0}
+                      </span>
                       <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">Jobs</span>
                     </div>
 
@@ -4210,7 +4441,9 @@ export default function WorkerPortal({ token, user, onLogout }: WorkerPortalProp
                       <div className="w-8 h-8 rounded-full bg-indigo-50 flex items-center justify-center mb-1.5">
                         <Zap className="w-4 h-4 text-indigo-600 stroke-[2.2]" />
                       </div>
-                      <span className="text-sm font-black text-slate-800 font-sans tracking-tight">94%</span>
+                      <span className="text-sm font-black text-slate-800 font-sans tracking-tight">
+                        {dashboardStats?.metrics?.on_time_pct !== undefined && dashboardStats?.metrics?.on_time_pct !== null ? dashboardStats.metrics.on_time_pct : 100}%
+                      </span>
                       <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">On time</span>
                     </div>
 
@@ -4219,7 +4452,9 @@ export default function WorkerPortal({ token, user, onLogout }: WorkerPortalProp
                       <div className="w-8 h-8 rounded-full bg-amber-50 flex items-center justify-center mb-1.5">
                         <Award className="w-4 h-4 text-amber-600 stroke-[2.2]" />
                       </div>
-                      <span className="text-sm font-black text-slate-800 font-sans tracking-tight">5★</span>
+                      <span className="text-sm font-black text-slate-800 font-sans tracking-tight">
+                        {dashboardStats?.metrics?.eco_score !== undefined && dashboardStats?.metrics?.eco_score !== null ? dashboardStats.metrics.eco_score : 0}★
+                      </span>
                       <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5 font-sans">Eco</span>
                     </div>
 
@@ -4259,80 +4494,60 @@ export default function WorkerPortal({ token, user, onLogout }: WorkerPortalProp
                       Recent feedback
                     </h3>
                     <span className="text-[10px] bg-slate-100 text-slate-500 font-black px-2.5 py-0.5 rounded-full uppercase tracking-tight">
-                      Average 4.8★
+                      Average {dashboardStats?.metrics?.avg_rating !== undefined && dashboardStats?.metrics?.avg_rating !== null ? dashboardStats.metrics.avg_rating : '0.0'}★
                     </span>
                   </div>
 
                   {/* Feedback grid list */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     
-                    {[
-                      {
-                        name: 'Amaya R.',
-                        initials: 'AR',
-                        rating: 5,
-                        text: 'Always punctual and very polite. Thanks!',
-                        time: '2d ago',
-                        color: 'bg-emerald-100 text-[#1E4D2B]'
-                      },
-                      {
-                        name: 'Priya J.',
-                        initials: 'PJ',
-                        rating: 3,
-                        text: 'Good service, but please be quieter early morning.',
-                        time: '5d ago',
-                        color: 'bg-blue-100 text-blue-700'
-                      },
-                      {
-                        name: 'Kasun W.',
-                        initials: 'KW',
-                        rating: 5,
-                        text: 'Excellent work as always 🌿',
-                        time: '1w ago',
-                        color: 'bg-emerald-100 text-[#1E4D2B]'
-                      },
-                      {
-                        name: 'Nimal D.',
-                        initials: 'ND',
-                        rating: 5,
-                        text: 'Very professional and on time every day.',
-                        time: '1w ago',
-                        color: 'bg-teal-100 text-teal-800'
-                      }
-                    ].map((feed, idx) => (
-                      <div 
-                        key={idx} 
-                        className="bg-[#FAFCFA]/60 border border-gray-100/70 p-4 rounded-2xl relative space-y-3 shadow-3xs"
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs ${feed.color}`}>
-                            {feed.initials}
-                          </div>
-                          <div>
-                            <h4 className="text-xs font-black text-slate-800 leading-none">{feed.name}</h4>
-                            <span className="text-[9px] text-gray-400 font-bold block mt-1">{feed.time}</span>
-                          </div>
-                        </div>
+                    {dashboardStats?.feedback && dashboardStats.feedback.length > 0 ? (
+                      dashboardStats.feedback.map((feed: any, idx: number) => {
+                        const color = feed.rating >= 4 
+                          ? 'bg-emerald-100 text-[#1E4D2B]' 
+                          : feed.rating === 3 
+                            ? 'bg-blue-100 text-blue-700' 
+                            : 'bg-rose-100 text-rose-700';
+                        return (
+                          <div 
+                            key={feed.id || idx} 
+                            className="bg-[#FAFCFA]/60 border border-gray-100/70 p-4 rounded-2xl relative space-y-3 shadow-3xs"
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs ${color}`}>
+                                {feed.resident_initials || feed.initials || 'R'}
+                              </div>
+                              <div>
+                                <h4 className="text-xs font-black text-slate-800 leading-none">{feed.resident_name || feed.name || 'Resident'}</h4>
+                                <span className="text-[9px] text-gray-400 font-bold block mt-1">{feed.time_ago || feed.time || 'Recent'}</span>
+                              </div>
+                            </div>
 
-                        {/* Stars rating */}
-                        <div className="flex items-center gap-0.5">
-                          {[1, 2, 3, 4, 5].map((star) => (
-                            <Star 
-                              key={star} 
-                              className={`w-3 h-3 ${
-                                star <= feed.rating 
-                                  ? 'fill-amber-400 stroke-amber-400' 
-                                  : 'stroke-gray-300 fill-transparent'
-                              }`} 
-                            />
-                          ))}
-                        </div>
+                            {/* Stars rating */}
+                            <div className="flex items-center gap-0.5">
+                              {[1, 2, 3, 4, 5].map((star) => (
+                                <Star 
+                                  key={star} 
+                                  className={`w-3 h-3 ${
+                                    star <= (feed.rating || 5) 
+                                      ? 'fill-amber-400 stroke-amber-400' 
+                                      : 'stroke-gray-300 fill-transparent'
+                                  }`} 
+                                />
+                              ))}
+                            </div>
 
-                        <p className="text-xs text-gray-500 font-semibold leading-relaxed font-sans mt-1">
-                          {feed.text}
-                        </p>
+                            <p className="text-xs text-gray-500 font-semibold leading-relaxed font-sans mt-1">
+                              {feed.feedback || feed.text || 'No comments left.'}
+                            </p>
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <div className="col-span-1 md:col-span-2 py-8 text-center text-xs text-gray-400 font-bold bg-[#FAFCFA]/40 border border-gray-100 rounded-2xl">
+                        No feedback submitted by residents yet.
                       </div>
-                    ))}
+                    )}
 
                   </div>
                 </div>
@@ -4358,22 +4573,14 @@ export default function WorkerPortal({ token, user, onLogout }: WorkerPortalProp
                   {/* Flex bars container */}
                   <div className="space-y-4 pt-2">
                     <div className="h-44 flex items-end justify-between gap-3 px-2">
-                      {[
-                        { day: 'Mon', percent: '40%', tasks: 8, label: 'Mon: 8 jobs' },
-                        { day: 'Tue', percent: '60%', tasks: 12, label: 'Tue: 12 jobs' },
-                        { day: 'Wed', percent: '50%', tasks: 10, label: 'Wed: 10 jobs' },
-                        { day: 'Thu', percent: '85%', tasks: 17, label: 'Thu: 17 jobs' },
-                        { day: 'Fri', percent: '70%', tasks: 14, label: 'Fri: 14 jobs' },
-                        { day: 'Sat', percent: '80%', tasks: 16, label: 'Sat: 16 jobs' },
-                        { day: 'Sun', percent: '75%', tasks: 15, label: 'Sun (Today): 15 jobs', isCurrent: true }
-                      ].map((bar, idx) => (
+                      {last7DaysStats.map((bar, idx) => (
                         <div 
                           key={idx} 
                           className="flex-1 flex flex-col items-center justify-end h-full relative group"
                         >
                           {/* Inner tooltip helper on hover */}
                           <div className="absolute bottom-full mb-2 bg-slate-800 text-white text-[9px] font-black tracking-tight py-1 px-2.5 rounded-lg shadow-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10 pointer-events-none scale-95 origin-bottom group-hover:scale-100 duration-150">
-                            {bar.label} • {bar.percent} rating
+                            {bar.label}
                           </div>
 
                           {/* Dynamic scaled bar wrapper */}
@@ -4393,12 +4600,12 @@ export default function WorkerPortal({ token, user, onLogout }: WorkerPortalProp
 
                     {/* Weekday labels grid aligned */}
                     <div className="grid grid-cols-7 gap-3 text-center pt-2 text-[10px] text-gray-400 font-bold select-none border-t border-gray-50 uppercase tracking-wider font-sans">
-                      {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day, i) => (
+                      {last7DaysStats.map((bar, i) => (
                         <span 
                           key={i} 
-                          className={day === 'Sun' ? 'text-[#1E4D2B] font-black' : ''}
+                          className={bar.isCurrent ? 'text-[#1E4D2B] font-black' : ''}
                         >
-                          {day}
+                          {bar.day}
                         </span>
                       ))}
                     </div>
@@ -4468,7 +4675,7 @@ export default function WorkerPortal({ token, user, onLogout }: WorkerPortalProp
                       <div className="flex items-center gap-4">
                         <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-[#1E4D2B] shadow-sm shrink-0">
                           <img 
-                            src={localUser?.avatarUrl || defaultAvatar} 
+                            src={localUser?.profile_photo_url || localUser?.avatarUrl || defaultAvatar} 
                             referrerPolicy="no-referrer" 
                             alt={localUser?.name || 'Worker'} 
                             className="w-full h-full object-cover" 
@@ -4851,7 +5058,7 @@ export default function WorkerPortal({ token, user, onLogout }: WorkerPortalProp
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-full overflow-hidden border border-emerald-250 shadow-sm bg-gray-100 shrink-0">
                     <img
-                      src={localUser?.avatarUrl || defaultAvatar}
+                      src={localUser?.profile_photo_url || localUser?.avatarUrl || defaultAvatar}
                       alt={localUser?.name || 'Worker'}
                       className="w-full h-full object-cover"
                       referrerPolicy="no-referrer"

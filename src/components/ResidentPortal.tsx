@@ -763,6 +763,11 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
 
   useEffect(() => {
     fetchResidentProfile();
+    // Auto-refresh resident timeline and worker status every 30 seconds to update worker details
+    const interval = setInterval(() => {
+      fetchResidentProfile();
+    }, 30000);
+    return () => clearInterval(interval);
   }, [token]);
 
   useEffect(() => {

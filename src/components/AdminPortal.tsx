@@ -1496,6 +1496,11 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
 
   useEffect(() => {
     loadAdminMetrics();
+    // Auto-refresh admin metrics and users data every 30 seconds to sync worker details
+    const interval = setInterval(() => {
+      loadAdminMetrics();
+    }, 30000);
+    return () => clearInterval(interval);
   }, [token]);
 
   // Handle printer-state auto reset on printing closure

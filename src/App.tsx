@@ -96,7 +96,15 @@ function AppContent({
         path="/worker"
         element={
           token && user && user.role === 'worker' ? (
-            <WorkerPortal token={token} user={user} onLogout={handleLogout} />
+            <WorkerPortal 
+              token={token} 
+              user={user} 
+              onLogout={handleLogout} 
+              onUserUpdate={(freshUser) => {
+                setUser(freshUser);
+                localStorage.setItem('ecotrack_user_profile', JSON.stringify(freshUser));
+              }}
+            />
           ) : (
             <Navigate to="/login" replace />
           )
@@ -158,14 +166,15 @@ export default function App() {
             if (res.ok) {
               const freshData = await res.json().catch(() => null);
               if (freshData && freshData.data) {
-                const freshUser: LoginUser = {
+                const freshUser: LoginUser & { avatarUrl?: string | null } = {
                   id: freshData.data.id,
                   name: freshData.data.name,
                   email: freshData.data.email,
                   phone: freshData.data.phone || '',
                   role: freshData.data.role,
                   shift: freshData.data.shift,
-                  profile_photo_url: freshData.data.profile_photo_path ? `/storage/${freshData.data.profile_photo_path}` : null
+                  profile_photo_url: freshData.data.profile_photo_path ? `/storage/${freshData.data.profile_photo_path}` : null,
+                  avatarUrl: freshData.data.profile_photo_path ? `/storage/${freshData.data.profile_photo_path}` : null
                 };
                 setToken(cachedToken);
                 setUser(freshUser);
@@ -196,14 +205,15 @@ export default function App() {
   }, []);
 
   const handleLoginSuccess = (newToken: string, newUser: any) => {
-    const formattedUser: LoginUser = {
+    const formattedUser: LoginUser & { avatarUrl?: string | null } = {
       id: newUser.id,
       name: newUser.name,
       email: newUser.email,
       phone: newUser.phone || '',
       role: newUser.role,
       shift: newUser.shift,
-      profile_photo_url: newUser.profile_photo_url || (newUser.profile_photo_path ? `/storage/${newUser.profile_photo_path}` : null)
+      profile_photo_url: newUser.profile_photo_url || (newUser.profile_photo_path ? `/storage/${newUser.profile_photo_path}` : null),
+      avatarUrl: newUser.profile_photo_url || (newUser.profile_photo_path ? `/storage/${newUser.profile_photo_path}` : null)
     };
     setToken(newToken);
     setUser(formattedUser);

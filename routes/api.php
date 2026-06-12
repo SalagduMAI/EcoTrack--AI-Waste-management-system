@@ -82,6 +82,7 @@ Route::middleware('auth:sanctum')->group(function () {
     // ==========================================================================
     Route::middleware('can:worker-access')->group(function () {
         Route::get('/worker/tasks', [\App\Http\Controllers\WorkerController::class, 'todayTasks']);
+        Route::get('/worker/dashboard-stats', [\App\Http\Controllers\WorkerController::class, 'dashboardStats']);
         Route::post('/worker/tasks/{id}/progress', [\App\Http\Controllers\WorkerController::class, 'markInProgress']);
         Route::post('/worker/tasks/{id}/verify-scan', [\App\Http\Controllers\WorkerController::class, 'scanVerifyAndDone']);
         Route::post('/worker/tasks/{id}/report-incident', [\App\Http\Controllers\WorkerController::class, 'reportIncident']);

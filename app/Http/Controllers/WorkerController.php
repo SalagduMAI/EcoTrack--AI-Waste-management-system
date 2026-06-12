@@ -322,4 +322,171 @@ class WorkerController extends Controller
             ]
         ], 200);
     }
+
+    /**
+     * Retrieve dashboard telemetry metrics, leaderboard, recent feedback, and notifications.
+     */
+    public function dashboardStats(Request $request): JsonResponse
+    {
+        $worker = $request->user();
+
+        // 1. CALCULATE WORKER PERFORMANCE METRICS
+        $totalJobs = Job::where('worker_id', $worker->id)->count();
+        $doneJobs = Job::where('worker_id', $worker->id)->where('status', 'done')->count();
+        $issueJobs = Job::where('worker_id', $worker->id)->where('status', 'issue')->count();
+
+        $onTimePct = null;
+        if ($doneJobs + $issueJobs > 0) {
+            $onTimePct = (int) round(($doneJobs / ($doneJobs + $issueJobs)) * 100);
+        } else {
+            $onTimePct = 100;
+        }
+
+        $avgRatingVal = \App\Models\Rating::where('worker_id', $worker->id)->avg('rating');
+        $avgRating = $avgRatingVal !== null ? round($avgRatingVal, 1) : 0.0;
+        $ratingCount = \App\Models\Rating::where('worker_id', $worker->id)->count();
+
+        $ecoScore = 0.0;
+        if ($avgRating > 0) {
+            $ecoScore = $avgRating >= 4.8 ? 5.0 : round(4.0 + ($avgRating * 0.2), 1);
+        }
+
+        $todayStr = Carbon::today()->format('Y-m-d');
+        $todayJobsDoneCount = Job::where('worker_id', $worker->id)
+            ->whereDate('scheduled_date', $todayStr)
+            ->where('status', 'done')
+            ->count();
+        $distanceToday = round($todayJobsDoneCount * 0.15, 1);
+
+        // 2. CONSTRUCT LEADERBOARD STATS
+        $workers = \App\Models\User::where('role', 'worker')->get();
+        $leaderboard = $workers->map(function ($w) use ($worker) {
+            $completedCount = Job::where('worker_id', $w->id)->where('status', 'done')->count();
+            $avgWRatingVal = \App\Models\Rating::where('worker_id', $w->id)->avg('rating');
+            $avgWRating = $avgWRatingVal !== null ? round($avgWRatingVal, 1) : 0.0;
+            
+            // Generate initials
+            $names = explode(' ', $w->name);
+            $initials = '';
+            foreach ($names as $n) {
+                $initials .= substr($n, 0, 1);
+            }
+            $initials = strtoupper(substr($initials, 0, 2));
+
+            return [
+                'id' => $w->id,
+                'name' => $w->name,
+                'initials' => $initials ?: 'W',
+                'completed_jobs' => $completedCount,
+                'rating' => $avgWRating,
+                'is_current' => $w->id === $worker->id
+            ];
+        })->sortByDesc('completed_jobs')->values();
+
+        $rankedLeaderboard = [];
+        $rank = 1;
+        foreach ($leaderboard as $item) {
+            $item['rank'] = $rank++;
+            $rankedLeaderboard[] = $item;
+        }
+
+        // 3. FETCH RECENT RESIDENT FEEDBACK
+        $feedback = \App\Models\Rating::with(['resident', 'job.unit'])
+            ->where('worker_id', $worker->id)
+            ->orderBy('created_at', 'desc')
+            ->take(5)
+            ->get()
+            ->map(function ($r) {
+                $resNames = explode(' ', $r->resident->name ?? 'Resident');
+                $resInitials = '';
+                foreach ($resNames as $n) {
+                    $resInitials .= substr($n, 0, 1);
+                }
+                $resInitials = strtoupper(substr($resInitials, 0, 2));
+
+                return [
+                    'id' => $r->id,
+                    'feedback' => $r->feedback ?: '',
+                    'rating' => $r->rating,
+                    'resident_name' => $r->resident->name ?? 'Resident',
+                    'resident_initials' => $resInitials ?: 'R',
+                    'unit_number' => $r->job && $r->job->unit ? $r->job->unit->unit_number : 'N/A',
+                    'time_ago' => $r->created_at ? $r->created_at->diffForHumans() : ''
+                ];
+            });
+
+        // 4. COMPILE WORKER SPECIFIC NOTIFICATIONS
+        $ratingNotifications = \App\Models\Rating::with(['resident', 'job.unit'])
+            ->where('worker_id', $worker->id)
+            ->orderBy('created_at', 'desc')
+            ->take(5)
+            ->get()
+            ->map(function ($r) {
+                return [
+                    'id' => 'rating_' . $r->id,
+                    'type' => 'rating',
+                    'title' => 'New Resident Feedback',
+                    'message' => ($r->resident->name ?? 'Resident') . ' rated your service ' . $r->rating . ' ★: "' . ($r->feedback ?: 'Great job!') . '"',
+                    'time' => $r->created_at ? $r->created_at->diffForHumans() : '2 days ago',
+                    'read' => false
+                ];
+            });
+
+        $incidentNotifications = Job::with(['block', 'floor', 'unit'])
+            ->where('worker_id', $worker->id)
+            ->where('status', 'issue')
+            ->orderBy('updated_at', 'desc')
+            ->take(5)
+            ->get()
+            ->map(function ($j) {
+                return [
+                    'id' => 'incident_' . $j->id,
+                    'type' => 'incident',
+                    'title' => 'Incident Logged',
+                    'message' => 'Skipped ' . ($j->unit->unit_number ?? 'Floor ' . $j->floor->floor_number) . ' due to: ' . ($j->issue_reason ?: 'Unknown issue'),
+                    'time' => $j->updated_at ? $j->updated_at->diffForHumans() : '1 hour ago',
+                    'read' => false
+                ];
+            });
+
+        $announcements = [
+            [
+                'id' => 'announcement_1',
+                'type' => 'announcement',
+                'title' => 'System schedule update',
+                'message' => 'Your shift schedule is active. Morning operations are standard today.',
+                'time' => '1 day ago',
+                'read' => false
+            ],
+            [
+                'id' => 'announcement_2',
+                'type' => 'announcement',
+                'title' => 'Heavy Rain Precaution',
+                'message' => 'Weather alert for Colombo region: high precipitation. Wear high-visibility gear.',
+                'time' => '3 days ago',
+                'read' => false
+            ]
+        ];
+
+        $allNotifications = collect($ratingNotifications)
+            ->merge($incidentNotifications)
+            ->merge($announcements)
+            ->values();
+
+        return response()->json([
+            'status' => 'success',
+            'data' => [
+                'metrics' => [
+                    'on_time_pct' => (int) $onTimePct,
+                    'avg_rating' => (float) round($avgRating, 1),
+                    'rating_count' => (int) $ratingCount,
+                    'eco_score' => (float) $ecoScore,
+                    'distance_today' => (float) $distanceToday,
+                ],
+                'leaderboard' => $rankedLeaderboard,
+                'feedback' => $feedback,
+                'notifications' => $allNotifications
+            ]
+        ]);
+    }
 }
