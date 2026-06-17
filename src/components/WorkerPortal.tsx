@@ -119,7 +119,7 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
     const maxTasks = Math.max(...days.map(d => d.tasks), 1);
     return days.map(d => {
       // Scale height between 10% and 100%
-      const pct = Math.max(10, Math.round((d.tasks / maxTasks) * 100));
+      const pct = d.tasks === 0 ? 0 : Math.max(10, Math.round((d.tasks / maxTasks) * 100));
       return {
         ...d,
         percent: `${pct}%`,
@@ -127,6 +127,137 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
       };
     });
   }, [tasks, history]);
+
+  // Dynamically calculate completed jobs grouped by 4 weeks for the last 30 days
+  const monthlyStats = React.useMemo(() => {
+    const today = new Date();
+    const allCompletedJobs = [
+      ...tasks.filter(t => t.status === 'done'),
+      ...history.filter(h => h.status === 'done')
+    ];
+    
+    const weeks = [
+      { day: 'Wk 1', count: 0 },
+      { day: 'Wk 2', count: 0 },
+      { day: 'Wk 3', count: 0 },
+      { day: 'Wk 4', count: 0 }
+    ];
+    
+    allCompletedJobs.forEach(j => {
+      if (!j.scheduled_date) return;
+      const jobDate = new Date(j.scheduled_date);
+      const diffTime = Math.abs(today.getTime() - jobDate.getTime());
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      
+      if (diffDays <= 7) {
+        weeks[3].count++;
+      } else if (diffDays <= 14) {
+        weeks[2].count++;
+      } else if (diffDays <= 21) {
+        weeks[1].count++;
+      } else if (diffDays <= 30) {
+        weeks[0].count++;
+      }
+    });
+    
+    const maxCount = Math.max(...weeks.map(w => w.count), 1);
+    return weeks.map(w => {
+      const pct = w.count === 0 ? 0 : Math.max(10, Math.round((w.count / maxCount) * 100));
+      return {
+        ...w,
+        percent: `${pct}%`
+      };
+    });
+  }, [tasks, history]);
+
+  // Dynamically calculate completed jobs grouped by 4 quarters for the current year
+  const yearlyStats = React.useMemo(() => {
+    const currentYear = new Date().getFullYear();
+    const allCompletedJobs = [
+      ...tasks.filter(t => t.status === 'done'),
+      ...history.filter(h => h.status === 'done')
+    ];
+    
+    const quarters = [
+      { day: 'Q1', count: 0 },
+      { day: 'Q2', count: 0 },
+      { day: 'Q3', count: 0 },
+      { day: 'Q4', count: 0 }
+    ];
+    
+    allCompletedJobs.forEach(j => {
+      if (!j.scheduled_date) return;
+      const jobDate = new Date(j.scheduled_date);
+      if (jobDate.getFullYear() !== currentYear) return;
+      
+      const month = jobDate.getMonth();
+      if (month <= 2) {
+        quarters[0].count++;
+      } else if (month <= 5) {
+        quarters[1].count++;
+      } else if (month <= 8) {
+        quarters[2].count++;
+      } else {
+        quarters[3].count++;
+      }
+    });
+    
+    const maxCount = Math.max(...quarters.map(q => q.count), 1);
+    return quarters.map(q => {
+      const pct = q.count === 0 ? 0 : Math.max(10, Math.round((q.count / maxCount) * 100));
+      return {
+        ...q,
+        percent: `${pct}%`
+      };
+    });
+  }, [tasks, history]);
+
+  // Dynamically group tasks by block and floor number
+  const floorGroups = React.useMemo(() => {
+    const groups: Record<string, { blockName: string; floorNumber: number; totalUnits: number; doneUnits: number; items: any[] }> = {};
+    
+    tasks.forEach(t => {
+      const blockName = t.block?.name || 'Block A';
+      const floorNumber = t.floor?.floor_number || 3;
+      const key = `${blockName}_${floorNumber}`;
+      
+      if (!groups[key]) {
+        groups[key] = {
+          blockName,
+          floorNumber,
+          totalUnits: 0,
+          doneUnits: 0,
+          items: []
+        };
+      }
+      
+      groups[key].totalUnits++;
+      if (t.status === 'done' || t.status === 'issue') {
+        groups[key].doneUnits++;
+      }
+      groups[key].items.push(t);
+    });
+    
+    return Object.values(groups);
+  }, [tasks]);
+
+  // Device Bound check based on browser environment
+  const getDeviceBound = () => {
+    const ua = navigator.userAgent;
+    if (ua.includes('Windows')) return 'Windows PC Web Browser';
+    if (ua.includes('Android')) return 'Android Mobile Web PWA';
+    if (ua.includes('iPhone') || ua.includes('iPad')) return 'iOS Mobile Web PWA';
+    if (ua.includes('Macintosh')) return 'Mac OS Web Browser';
+    if (ua.includes('Linux')) return 'Linux System Web Browser';
+    return 'Zebra PWA Rugged V2';
+  };
+
+  // Contract Scheme based on shift
+  const getContractScheme = () => {
+    const shiftName = localUser?.shift ? (localUser.shift.charAt(0).toUpperCase() + localUser.shift.slice(1)) : 'Morning';
+    return `Residential Complex ${shiftName} Shift`;
+  };
+
   const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'warn' | 'warning' | 'info' | 'error' } | null>(null);
@@ -164,8 +295,39 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
   ]);
 
   // Time Tracker State (matches "01:14:32" in UI of screenshot and increments)
-  const [timerSeconds, setTimerSeconds] = useState(4472); 
-  const [timerPaused, setTimerPaused] = useState(false);
+  const isWithinShiftHours = () => {
+    const userObj = localUser || { name: 'Sunil Kumara', phone: '+94 77 123 4567', email: 'sunil.k@ecotrack.lk', shift: 'Morning' };
+    const shift = (userObj?.shift || 'morning').toLowerCase();
+    const now = new Date();
+    const hours = now.getHours();
+    
+    if (shift.includes('evening')) {
+      return hours >= 14 && hours < 22;
+    } else if (shift.includes('night')) {
+      return hours >= 22 || hours < 6;
+    } else {
+      return hours >= 8 && hours < 14;
+    }
+  };
+
+  const [timerSeconds, setTimerSeconds] = useState(() => parseInt(localStorage.getItem('ecotrack_shift_timer_seconds') || '0', 10)); 
+  const [timerPaused, setTimerPaused] = useState(() => localStorage.getItem('ecotrack_shift_timer_paused') === 'false' ? false : true);
+
+  // Save timer state to localStorage
+  useEffect(() => {
+    localStorage.setItem('ecotrack_shift_timer_seconds', timerSeconds.toString());
+    localStorage.setItem('ecotrack_shift_timer_paused', timerPaused.toString());
+  }, [timerSeconds, timerPaused]);
+
+  // Check if shift has changed or ended on load/mount
+  useEffect(() => {
+    if (!isWithinShiftHours()) {
+      localStorage.removeItem('ecotrack_shift_timer_seconds');
+      localStorage.removeItem('ecotrack_shift_timer_paused');
+      setTimerSeconds(0);
+      setTimerPaused(true);
+    }
+  }, [localUser?.shift]);
 
   // Search filter query
   const [searchQuery, setSearchQuery] = useState('');
@@ -182,12 +344,19 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
   useEffect(() => {
     let interval: any = null;
     if (!timerPaused) {
-      interval = setInterval(() => {
-        setTimerSeconds(s => s + 1);
-      }, 1000);
+      if (isWithinShiftHours()) {
+        interval = setInterval(() => {
+          setTimerSeconds(s => s + 1);
+        }, 1000);
+      } else {
+        setTimerPaused(true);
+        setMessage({ text: 'Shift timer paused automatically: Shift hours have ended.', type: 'warn' });
+      }
     }
-    return () => clearInterval(interval);
-  }, [timerPaused]);
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [timerPaused, localUser?.shift]);
 
   // Format second counts to HH:MM:SS
   const formatTimer = (totalSeconds: number) => {
@@ -202,7 +371,7 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
   };
 
   const getHistoryReferenceDate = (): Date => {
-    let maxD = new Date('2026-05-10'); // Default start fallback matching mock data peak
+    let maxD = new Date(); // Default start fallback matching mock data peak
     if (history.length > 0) {
       let candidate = new Date('1970-01-01');
       let found = false;
@@ -1007,8 +1176,13 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
 
   // Metrics calculation
   const doneCount = tasks.filter(t => t.status === 'done').length;
-  const totalCount = tasks.length || 18;
-  const progressPercent = Math.round((doneCount / totalCount) * 100);
+  const totalCount = tasks.length;
+  const progressPercent = totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0;
+
+  const uniqueBlocks = Array.from(new Set(tasks.map(t => t.block?.name).filter(Boolean)));
+  const uniqueFloors = Array.from(new Set(tasks.map(t => t.floor?.name).filter(Boolean)));
+  const routeHeaderBlock = tasks.length > 0 ? (uniqueBlocks.join(' & ') || 'Block A') : 'No assigned route';
+  const routeHeaderFloors = tasks.length > 0 ? `${uniqueFloors.length} floor${uniqueFloors.length !== 1 ? 's' : ''}` : '';
 
   // Filter tasks based on general search input
   const filteredTasks = tasks.filter(t => {
@@ -1293,7 +1467,7 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
               ) : activeTab === 'history' ? (
                 <>
                   <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-0.5">
-                    Performance • 312 completed • 4.8★
+                    Performance • {dashboardStats?.leaderboard?.find((w: any) => w.is_current)?.completed_jobs ?? 0} completed • {dashboardStats?.metrics?.avg_rating ?? '4.8'}★
                   </span>
                   <h1 className="text-2xl font-black text-[#1E4D2B] flex items-center gap-2 tracking-tight">
                     My history
@@ -1375,7 +1549,7 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
               ) : (
                 <>
                   <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-0.5">
-                    Workspace • 10 May 2026 • {localUser?.shift || 'Morning'} shift
+                    Workspace • {new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })} • {localUser?.shift || 'Morning'} shift
                   </span>
                   <h1 className="text-2xl font-black text-gray-950 flex items-center gap-2 tracking-tight">
                     Good morning, {localUser?.name?.split(' ')[0] || 'Sunil'} <span className="animate-wiggle">🙋‍♂️</span>
@@ -1728,37 +1902,68 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
               <button onClick={() => setMessage(null)} className="text-gray-400 hover:text-gray-900 font-extrabold text-sm ml-4">×</button>
             </div>
           )}
-
           {/* ------------------ TAB A: DASHBOARD VIEW ------------------ */}
-          {activeTab === 'dashboard' && (
-            <div className="space-y-6 animate-in fade-in duration-200" id="view-dashboard">
-              
-              {/* HERO ACTIVE PROGRESS CARD (Deep green, shift timers, progress bars) */}
-              <div className="p-6 bg-[#184624] text-white rounded-3xl relative overflow-hidden shadow-md flex flex-col md:flex-row justify-between gap-6" id="shift-hero-banner">
-                {/* Background decorative vector overlays */}
-                <div className="absolute top-0 right-0 w-80 h-80 bg-emerald-600/10 rounded-full blur-3xl"></div>
-                <div className="absolute -bottom-20 -left-10 w-64 h-64 bg-teal-500/10 rounded-full blur-2xl"></div>
+          {activeTab === 'dashboard' && (() => {
+            const currentJob = tasks.find(t => t.status === 'in_progress') || tasks.find(t => t.status === 'pending') || tasks[tasks.length - 1];
+            const currentBlockName = currentJob?.block?.name || '';
+            const currentFloorName = currentJob?.floor?.name || '';
 
-                <div className="space-y-4 max-w-xl z-10 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="inline-flex items-center gap-1 bg-[#EEFDF2]/90 text-[#1E4D2B] text-[10px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider">
-                      <span className="w-1.5 h-1.5 rounded-full bg-blue-600 animate-ping"></span>
-                      In-Progress
-                    </span>
-                    <span className="text-[10px] uppercase font-bold text-emerald-250 tracking-wider">
-                      MORNING SHIFT • 08:00 - 14:00
-                    </span>
-                  </div>
+            const shiftEndHour = (localUser?.shift?.toLowerCase() || '').includes('evening') ? 22 : 
+                                 (localUser?.shift?.toLowerCase() || '').includes('night') ? 6 : 14;
+            const estWrapUp = `${(shiftEndHour - 1).toString().padStart(2, '0')}:20`;
 
-                  <div className="space-y-1">
-                    <h2 className="text-xl md:text-2xl font-black tracking-tight">You're on Block A • Floor 3</h2>
-                    <p className="text-xs text-emerald-100 font-medium">
-                      {doneCount} of {totalCount} done - {totalCount - doneCount} units remaining - 1 floor ahead of schedule 🌿
-                    </p>
-                  </div>
+            const weekTotal = last7DaysStats.reduce((sum, d) => sum + d.tasks, 0);
+            const weekAvg = (weekTotal / 7).toFixed(1);
 
-                  {/* Progress Line */}
-                  <div className="space-y-2 pt-2">
+            const monthTotal = monthlyStats.reduce((sum, w) => sum + w.count, 0);
+            const monthAvg = (monthTotal / 4).toFixed(1);
+
+            const yearTotal = yearlyStats.reduce((sum, q) => sum + q.count, 0);
+            const yearAvg = (yearTotal / 4).toFixed(1);
+
+            return (
+              <div className="space-y-6 animate-in fade-in duration-200" id="view-dashboard">
+                
+                {/* HERO ACTIVE PROGRESS CARD (Deep green, shift timers, progress bars) */}
+                <div className="p-6 bg-[#184624] text-white rounded-3xl relative overflow-hidden shadow-md flex flex-col md:flex-row justify-between gap-6" id="shift-hero-banner">
+                  {/* Background decorative vector overlays */}
+                  <div className="absolute top-0 right-0 w-80 h-80 bg-emerald-600/10 rounded-full blur-3xl"></div>
+                  <div className="absolute -bottom-20 -left-10 w-64 h-64 bg-teal-500/10 rounded-full blur-2xl"></div>
+
+                  <div className="space-y-4 max-w-xl z-10 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="inline-flex items-center gap-1 bg-[#EEFDF2]/90 text-[#1E4D2B] text-[10px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider">
+                        <span className="w-1.5 h-1.5 rounded-full bg-blue-600 animate-ping"></span>
+                        In-Progress
+                      </span>
+                      <span className="text-[10px] uppercase font-bold text-emerald-250 tracking-wider">
+                        {localUser?.shift || 'Morning'} SHIFT • {
+                          (localUser?.shift?.toLowerCase() || '').includes('evening') ? '14:00 - 22:00' : 
+                          (localUser?.shift?.toLowerCase() || '').includes('night') ? '22:00 - 06:00' : '08:00 - 14:00'
+                        }
+                      </span>
+                    </div>
+
+                    <div className="space-y-1">
+                      {tasks.length > 0 ? (
+                        <>
+                          <h2 className="text-xl md:text-2xl font-black tracking-tight">You're on {currentBlockName} • {currentFloorName}</h2>
+                          <p className="text-xs text-emerald-100 font-medium">
+                            {doneCount} of {totalCount} done - {totalCount - doneCount} units remaining - 1 floor ahead of schedule 🌿
+                          </p>
+                        </>
+                      ) : (
+                        <>
+                          <h2 className="text-xl md:text-2xl font-black tracking-tight">No active assignment</h2>
+                          <p className="text-xs text-emerald-100 font-medium">
+                            You have no scheduled collection tasks for this shift.
+                          </p>
+                        </>
+                      )}
+                    </div>
+
+                    {/* Progress Line */}
+                    <div className="space-y-2 pt-2">
                     <div className="w-full bg-emerald-900/60 rounded-full h-3.5 p-0.5 overflow-hidden">
                       <div 
                         className="bg-white rounded-full h-2.5 transition-all duration-500"
@@ -1767,7 +1972,7 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
                     </div>
                     <div className="flex justify-between items-center text-[10px] text-emerald-100/90 font-black tracking-widest leading-none">
                       <span>{doneCount} / {totalCount} UNITS</span>
-                      <span>EST. WRAP-UP 13:20</span>
+                      <span>EST. WRAP-UP {tasks.length > 0 ? estWrapUp : '--:--'}</span>
                     </div>
                   </div>
                 </div>
@@ -1782,11 +1987,17 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
                   </div>
 
                   <button
-                    onClick={() => setTimerPaused(!timerPaused)}
+                    onClick={() => {
+                      if (timerPaused && !isWithinShiftHours()) {
+                        setMessage({ text: `Cannot start shift: You are outside your scheduled ${localUser?.shift || 'Morning'} shift hours.`, type: 'error' });
+                        return;
+                      }
+                      setTimerPaused(!timerPaused);
+                    }}
                     className="mt-4 md:mt-0 px-5 py-2 rounded-xl bg-white/15 text-white hover:bg-white/20 transition-all font-black text-xs flex items-center gap-2 w-full md:w-auto justify-center select-none"
                   >
                     <span className={`w-2 h-2 rounded-full ${timerPaused ? 'bg-amber-400' : 'bg-emerald-400 animate-radial-ping'}`}></span>
-                    {timerPaused ? 'Resume Shift' : 'Pause'}
+                    {timerPaused ? (timerSeconds === 0 ? 'Start Shift' : 'Resume Shift') : 'Pause'}
                   </button>
                 </div>
               </div>
@@ -1885,7 +2096,7 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
                     <div className="flex justify-between items-center pb-2 border-b border-gray-100">
                       <div>
                         <span className="text-[9px] font-black text-gray-400 uppercase tracking-wider block">TODAY'S ROUTE</span>
-                        <h3 className="text-base font-black text-[#1E4D2B]">Block A • 3 floors</h3>
+                        <h3 className="text-base font-black text-[#1E4D2B]">{routeHeaderBlock} • {routeHeaderFloors}</h3>
                       </div>
                       <button 
                         type="button"
@@ -2012,9 +2223,9 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
                       <div>
                         <span className="text-[9px] font-bold text-gray-400 uppercase tracking-widest block">PERFORMANCE GRAPH</span>
                         <h4 className="text-sm font-black text-gray-900">
-                          {perfGraphTerm === 'Week' && "126 jobs completed • avg 18/day"}
-                          {perfGraphTerm === 'Month' && "326 jobs completed • avg 81/week"}
-                          {perfGraphTerm === 'Year' && "1,440 jobs completed • avg 360/quarter"}
+                          {perfGraphTerm === 'Week' && `${weekTotal} jobs completed • avg ${weekAvg}/day`}
+                          {perfGraphTerm === 'Month' && `${monthTotal} jobs completed • avg ${monthAvg}/week`}
+                          {perfGraphTerm === 'Year' && `${yearTotal} jobs completed • avg ${yearAvg}/quarter`}
                         </h4>
                       </div>
                       
@@ -2038,36 +2249,21 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
                     {/* Bar visualization */}
                     <div className="pt-4 flex items-end justify-between h-32 w-full gap-2 px-2" id="graph-columns">
                       {(perfGraphTerm === 'Week' 
-                        ? [
-                            { day: 'Mon', count: 14, h: 'h-[63%]' },
-                            { day: 'Tue', count: 18, h: 'h-[81%]' },
-                            { day: 'Wed', count: 16, h: 'h-[72%]' },
-                            { day: 'Thu', count: 22, h: 'h-[99%]' },
-                            { day: 'Fri', count: 18, h: 'h-[81%]' },
-                            { day: 'Sat', count: 20, h: 'h-[90%]' },
-                            { day: 'Sun', count: 18, h: 'h-[81%]' }
-                          ]
+                        ? last7DaysStats.map(d => ({ day: d.day, count: d.tasks, percent: d.percent }))
                         : perfGraphTerm === 'Month'
-                        ? [
-                            { day: 'Wk 1', count: 72, h: 'h-[75%]' },
-                            { day: 'Wk 2', count: 85, h: 'h-[88%]' },
-                            { day: 'Wk 3', count: 91, h: 'h-[95%]' },
-                            { day: 'Wk 4', count: 78, h: 'h-[81%]' }
-                          ]
-                        : [
-                            { day: 'Q1', count: 280, h: 'h-[60%]' },
-                            { day: 'Q2', count: 320, h: 'h-[70%]' },
-                            { day: 'Q3', count: 390, h: 'h-[85%]' },
-                            { day: 'Q4', count: 450, h: 'h-[99%]' }
-                          ]
+                        ? monthlyStats.map(w => ({ day: w.day, count: w.count, percent: w.percent }))
+                        : yearlyStats.map(q => ({ day: q.day, count: q.count, percent: q.percent }))
                       ).map((item, id) => (
-                        <div key={id} className="flex-1 flex flex-col items-center gap-2 group cursor-pointer relative">
+                        <div key={id} className="flex-1 flex flex-col items-center gap-2 group cursor-pointer relative" style={{ height: '100%' }}>
                           <div className="text-[9px] font-bold text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity bg-gray-900 text-white rounded px-1.5 py-0.5 -mt-6 absolute z-15 top-0">{item.count}</div>
-                          <div className={`w-full bg-[#E3EFE5] group-hover:bg-[#2E7D32] rounded-t-lg transition-all duration-300 ${item.h}`}>
+                          <div 
+                            className="w-full bg-[#E3EFE5] group-hover:bg-[#2E7D32] rounded-t-lg transition-all duration-300 flex flex-col justify-end"
+                            style={{ height: item.percent }}
+                          >
                             {/* Inside active highlight for high days */}
                             {item.count > 18 && <div className="w-full h-full bg-[#1E4D2B]/10 rounded-t-lg"></div>}
                           </div>
-                          <span className="text-[10px] font-extrabold text-gray-450">{item.day}</span>
+                          <span className="text-[10px] font-extrabold text-gray-450 mt-auto">{item.day}</span>
                         </div>
                       ))}
                     </div>
@@ -2293,7 +2489,8 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
               </div>
 
             </div>
-          )}
+           );
+          })()}
 
           {/* ------------------ TAB B: TODAY'S TASKS VIEW ------------------ */}
           {activeTab === 'tasks' && (
@@ -2377,156 +2574,70 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
 
                   {/* Grouped Floors List Row (Screen 1 & 2 Floor Layouts) */}
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-2">
-                    {/* Floor 1 Block A Floor 3 */}
-                    <div className="bg-white border border-gray-200/60 rounded-3xl p-5 space-y-4 shadow-xs text-left">
-                      <div className="flex justify-between items-center pb-2 border-b border-gray-50">
-                        <div>
-                          <span className="text-[10px] uppercase font-bold text-gray-400">FLOOR</span>
-                          <h4 className="text-sm font-black text-slate-900 mt-0.5">Block A • Floor 3</h4>
-                        </div>
-                        <span className="bg-[#EFF3F0] text-[#1E4D2B] rounded-full px-2.5 py-0.5 text-[10px] font-black">
-                          {tasks.filter(t => t.floor?.floor_number === 3 && (t.status === 'done' || t.status === 'issue')).length}/4
-                        </span>
+                    {floorGroups.length === 0 ? (
+                      <div className="col-span-full py-12 text-center text-xs text-gray-400 font-bold bg-white border border-gray-250 rounded-3xl shadow-xs border-dashed border-gray-300">
+                        No assigned collection floors for this shift.
                       </div>
-                      <div className="space-y-2.5">
-                        {filteredTasks.filter(t => t.floor?.floor_number === 3).length === 0 ? (
-                          <div className="p-4 text-center text-xs text-gray-400 font-bold bg-[#FAFCFA] rounded-2xl border border-dashed border-gray-150">
-                            No matching units
-                          </div>
-                        ) : (
-                          filteredTasks.filter(t => t.floor?.floor_number === 3).map((item) => (
-                            <div 
-                              key={item.id}
-                              onClick={() => {
-                                setSelectedFloorGroup({
-                                  blockName: 'Block A',
-                                  floorNumber: 3,
-                                  totalUnits: 4,
-                                  doneUnits: tasks.filter(t => t.floor?.floor_number === 3 && (t.status === 'done' || t.status === 'issue')).length,
-                                  items: tasks.filter(t => t.floor?.floor_number === 3)
-                                });
-                                setTaskSubView('pre_run');
-                              }}
-                              className="p-3 bg-gray-50/50 border border-gray-150 rounded-2xl flex items-center justify-between hover:bg-emerald-50/30 font-semibold cursor-pointer transition-all"
-                            >
-                              <div className="flex items-center gap-3">
-                                <Trash2 className={`w-4 h-4 shrink-0 ${item.status === 'done' ? 'text-emerald-600' : 'text-slate-400'}`} />
-                                <div>
-                                  <p className="text-xs font-black text-slate-900">{item.unit?.unit_number || 'A-30X'}</p>
-                                  {item.status === 'done' && <p className="text-[9px] text-gray-400 mt-0.5">Completed 6:35 AM</p>}
-                                  {item.status === 'in_progress' && <p className="text-[9px] text-[#3B82F6] font-bold mt-0.5 animate-pulse">Started 7:10 AM</p>}
-                                </div>
-                              </div>
-                              <span className={`text-[9px] px-2 py-0.5 rounded-full font-black uppercase ${
-                                item.status === 'done' ? 'bg-emerald-100 text-emerald-800' :
-                                item.status === 'in_progress' ? 'bg-blue-100 text-blue-700 animate-pulse' :
-                                'bg-amber-100 text-amber-700'
-                              }`}>
-                                ● {item.status === 'in_progress' ? 'In-Progress' : item.status}
-                              </span>
+                    ) : (
+                      floorGroups.map((group, groupIdx) => (
+                        <div key={groupIdx} className="bg-white border border-gray-200/60 rounded-3xl p-5 space-y-4 shadow-xs text-left">
+                          <div className="flex justify-between items-center pb-2 border-b border-gray-50">
+                            <div>
+                              <span className="text-[10px] uppercase font-bold text-gray-400">FLOOR</span>
+                              <h4 className="text-sm font-black text-slate-900 mt-0.5">{group.blockName} • Floor {group.floorNumber}</h4>
                             </div>
-                          ))
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Floor 2 Block A Floor 4 */}
-                    <div className="bg-white border border-gray-200/60 rounded-3xl p-5 space-y-4 shadow-xs text-left">
-                      <div className="flex justify-between items-center pb-2 border-b border-gray-50">
-                        <div>
-                          <span className="text-[10px] uppercase font-bold text-gray-400">FLOOR</span>
-                          <h4 className="text-sm font-black text-slate-900 mt-0.5">Block A • Floor 4</h4>
-                        </div>
-                        <span className="bg-[#EFF3F0] text-[#1E4D2B] rounded-full px-2.5 py-0.5 text-[10px] font-black">
-                          {tasks.filter(t => t.floor?.floor_number === 4 && (t.status === 'done' || t.status === 'issue')).length}/3
-                        </span>
-                      </div>
-                      <div className="space-y-2.5">
-                        {filteredTasks.filter(t => t.floor?.floor_number === 4).length === 0 ? (
-                          <div className="p-4 text-center text-xs text-gray-400 font-bold bg-[#FAFCFA] rounded-2xl border border-dashed border-gray-150">
-                            No matching units
+                            <span className="bg-[#EFF3F0] text-[#1E4D2B] rounded-full px-2.5 py-0.5 text-[10px] font-black">
+                              {group.doneUnits}/{group.totalUnits}
+                            </span>
                           </div>
-                        ) : (
-                          filteredTasks.filter(t => t.floor?.floor_number === 4).map((item) => (
-                            <div 
-                              key={item.id}
-                              onClick={() => {
-                                setSelectedFloorGroup({
-                                  blockName: 'Block A',
-                                  floorNumber: 4,
-                                  totalUnits: 3,
-                                  doneUnits: tasks.filter(t => t.floor?.floor_number === 4 && (t.status === 'done' || t.status === 'issue')).length,
-                                  items: tasks.filter(t => t.floor?.floor_number === 4)
-                                });
-                                setTaskSubView('pre_run');
-                              }}
-                              className="p-3 bg-gray-50/50 border border-gray-150 rounded-2xl flex items-center justify-between hover:bg-emerald-50/30 font-semibold cursor-pointer transition-all"
-                            >
-                              <div className="flex items-center gap-3">
-                                <Trash2 className="w-4 h-4 text-slate-400 shrink-0" />
-                                <div>
-                                  <p className="text-xs font-black text-slate-900">{item.unit?.unit_number || `A-40${item.id % 10}`}</p>
-                                  {item.status === 'done' && <p className="text-[9px] text-gray-400 mt-0.5">Completed</p>}
-                                </div>
+                          <div className="space-y-2.5">
+                            {group.items.length === 0 ? (
+                              <div className="p-4 text-center text-xs text-gray-400 font-bold bg-[#FAFCFA] rounded-2xl border border-dashed border-gray-150">
+                                No matching units
                               </div>
-                              <span className="text-[9px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-black uppercase">
-                                ● {item.status}
-                              </span>
-                            </div>
-                          ))
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Floor 3 Block B Floor 2 */}
-                    <div className="bg-white border border-gray-200/60 rounded-3xl p-5 space-y-4 shadow-xs text-left">
-                      <div className="flex justify-between items-center pb-2 border-b border-gray-50">
-                        <div>
-                          <span className="text-[10px] uppercase font-bold text-gray-400">FLOOR</span>
-                          <h4 className="text-sm font-black text-slate-900 mt-0.5">Block B • Floor 2</h4>
-                        </div>
-                        <span className="bg-[#EFF3F0] text-[#1E4D2B] rounded-full px-2.5 py-0.5 text-[10px] font-black">
-                          {tasks.filter(t => t.block?.name === 'Block B' && t.floor?.floor_number === 2 && (t.status === 'done' || t.status === 'issue')).length}/4
-                        </span>
-                      </div>
-                      <div className="space-y-2.5">
-                        {filteredTasks.filter(t => t.block?.name === 'Block B' && t.floor?.floor_number === 2).length === 0 ? (
-                          <div className="p-4 text-center text-xs text-gray-400 font-bold bg-[#FAFCFA] rounded-2xl border border-dashed border-gray-150">
-                            No matching units
+                            ) : (
+                              group.items.map((item) => (
+                                <div 
+                                  key={item.id}
+                                  onClick={() => {
+                                    setSelectedFloorGroup({
+                                      blockName: group.blockName,
+                                      floorNumber: group.floorNumber,
+                                      totalUnits: group.totalUnits,
+                                      doneUnits: group.doneUnits,
+                                      items: group.items
+                                    });
+                                    setTaskSubView('pre_run');
+                                  }}
+                                  className="p-3 bg-gray-50/50 border border-gray-150 rounded-2xl flex items-center justify-between hover:bg-emerald-50/30 font-semibold cursor-pointer transition-all"
+                                >
+                                  <div className="flex items-center gap-3">
+                                    <Trash2 className={`w-4 h-4 shrink-0 ${
+                                      item.status === 'done' ? 'text-emerald-600' : 
+                                      item.status === 'issue' ? 'text-rose-500' : 'text-slate-400'
+                                    }`} />
+                                    <div>
+                                      <p className="text-xs font-black text-slate-900">{item.unit?.unit_number || `Unit ${item.id}`}</p>
+                                      {item.status === 'done' && <p className="text-[9px] text-gray-400 mt-0.5">Completed</p>}
+                                      {item.status === 'in_progress' && <p className="text-[9px] text-[#3B82F6] font-bold mt-0.5 animate-pulse">In Progress</p>}
+                                      {item.status === 'issue' && <p className="text-[9px] text-rose-550 mt-0.5">Reported: {item.issue_reason || 'Issue'}</p>}
+                                    </div>
+                                  </div>
+                                  <span className={`text-[9px] px-2 py-0.5 rounded-full font-black uppercase ${
+                                    item.status === 'done' ? 'bg-emerald-100 text-emerald-800' :
+                                    item.status === 'in_progress' ? 'bg-blue-100 text-blue-700 animate-pulse' :
+                                    item.status === 'issue' ? 'bg-rose-100 text-rose-700' :
+                                    'bg-amber-100 text-amber-700'
+                                  }`}>
+                                    ● {item.status === 'in_progress' ? 'In-Progress' : item.status}
+                                  </span>
+                                </div>
+                              ))
+                            )}
                           </div>
-                        ) : (
-                          filteredTasks.filter(t => t.block?.name === 'Block B' && t.floor?.floor_number === 2).map((item) => (
-                            <div 
-                              key={item.id}
-                              onClick={() => {
-                                setSelectedFloorGroup({
-                                  blockName: 'Block B',
-                                  floorNumber: 2,
-                                  totalUnits: 4,
-                                  doneUnits: tasks.filter(t => t.block?.name === 'Block B' && t.floor?.floor_number === 2 && (t.status === 'done' || t.status === 'issue')).length,
-                                  items: tasks.filter(t => t.block?.name === 'Block B' && t.floor?.floor_number === 2)
-                                });
-                                setTaskSubView('pre_run');
-                              }}
-                              className="p-3 bg-gray-50/50 border border-gray-150 rounded-2xl flex items-center justify-between hover:bg-emerald-50/30 font-semibold cursor-pointer transition-all"
-                            >
-                              <div className="flex items-center gap-3">
-                                <Trash2 className={`w-4 h-4 shrink-0 ${item.status === 'issue' ? 'text-rose-500' : 'text-slate-400'}`} />
-                                <div>
-                                  <p className="text-xs font-black text-slate-900">{item.unit?.unit_number || `B-20${item.id % 10}`}</p>
-                                  {item.status === 'issue' && <p className="text-[9px] text-rose-500 mt-0.5">Reported 8:28 AM</p>}
-                                </div>
-                              </div>
-                              <span className={`text-[9px] px-2 py-0.5 rounded-full font-black uppercase ${
-                                item.status === 'issue' ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700'
-                              }`}>
-                                ● {item.status}
-                              </span>
-                            </div>
-                          ))
-                        )}
-                      </div>
-                    </div>
+                        </div>
+                      ))
+                    )}
                   </div>
                 </div>
               )}
@@ -3588,7 +3699,7 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
                   {isQrVerified ? (
                     <div className="relative z-25 w-full bg-[#1E4D2B] py-4 px-6 text-center text-white border-t border-emerald-800/20 flex items-center justify-center gap-2 animate-in slide-in-from-bottom duration-250">
                       <Check className="w-4 h-4 text-emerald-300 stroke-[3.5]" />
-                      <span className="text-sm font-black tracking-wide font-sans">Block A • Floor 3 — Verified</span>
+                      <span className="text-sm font-black tracking-wide font-sans">{selectedFloorGroup?.blockName || 'Block A'} • Floor {selectedFloorGroup?.floorNumber || 3} — Verified</span>
                     </div>
                   ) : (
                     <div className="relative z-25 w-full bg-black/80 py-4 px-6 text-center text-gray-200 border-t border-neutral-900 flex items-center justify-center">
@@ -3668,25 +3779,18 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
                     <div className="bg-white border border-gray-150/80 rounded-[28px] p-5 space-y-4 shadow-xs text-left animate-in zoom-in-95 duration-200">
                       <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest block font-sans">Ready to Start</span>
                       <div className="space-y-1">
-                        <h4 className="text-lg font-black text-gray-950 leading-snug font-sans">Block A • Floor 3</h4>
-                        <p className="text-xs text-gray-400 font-bold uppercase tracking-tight font-sans">4 units • scheduled 6:30 AM</p>
+                        <h4 className="text-lg font-black text-gray-950 leading-snug font-sans">{selectedFloorGroup?.blockName || 'Block A'} • Floor {selectedFloorGroup?.floorNumber || 3}</h4>
+                        <p className="text-xs text-gray-400 font-bold uppercase tracking-tight font-sans">
+                          {selectedFloorGroup?.totalUnits || 0} units • scheduled {selectedFloorGroup?.items?.[0]?.scheduled_time || '6:30 AM'}
+                        </p>
                       </div>
                       
                       <button
                         type="button"
                         onClick={() => {
-                          // Start floor run collection exactly as implemented
-                          const floor3Tasks = tasks.filter(t => t.floor?.floor_number === 3);
-                          setSelectedFloorGroup({
-                            blockName: 'Block A',
-                            floorNumber: 3,
-                            totalUnits: 4,
-                            doneUnits: tasks.filter(t => t.floor?.floor_number === 3 && (t.status === 'done' || t.status === 'issue')).length,
-                            items: floor3Tasks
-                          });
                           setTaskSubView('pre_run');
                           setActiveTab('tasks');
-                          setMessage({ text: 'Starting Block A • Floor 3 compilation routine.', type: 'success' });
+                          setMessage({ text: `Starting ${selectedFloorGroup?.blockName || 'Block A'} • Floor ${selectedFloorGroup?.floorNumber || 3} compilation routine.`, type: 'success' });
                         }}
                         className="w-full py-3.5 bg-[#1E4D2B] hover:bg-[#15381f] text-white text-xs font-black rounded-xl cursor-pointer select-none flex items-center justify-center gap-1.5 shadow-md active:scale-98 transition-all"
                       >
@@ -3741,7 +3845,9 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
                     <CheckCircle className="w-4.5 h-4.5 text-[#1E4D2B]" />
                   </div>
                   <div>
-                    <div className="text-2xl font-black text-[#1E4D2B] leading-none">312</div>
+                    <div className="text-2xl font-black text-[#1E4D2B] leading-none">
+                      {dashboardStats?.leaderboard?.find((w: any) => w.is_current)?.completed_jobs ?? 0}
+                    </div>
                     <div className="text-[10px] uppercase font-black tracking-wider text-gray-400 mt-1 block">Total Jobs</div>
                   </div>
                 </div>
@@ -3752,7 +3858,9 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
                     <Zap className="w-4.5 h-4.5 text-blue-500 fill-blue-500" />
                   </div>
                   <div>
-                    <div className="text-2xl font-black text-[#1E4D2B] leading-none">94%</div>
+                    <div className="text-2xl font-black text-[#1E4D2B] leading-none">
+                      {dashboardStats?.metrics?.on_time_pct !== undefined ? `${dashboardStats.metrics.on_time_pct}%` : '100%'}
+                    </div>
                     <div className="text-[10px] uppercase font-black tracking-wider text-gray-400 mt-1 block">On time</div>
                   </div>
                 </div>
@@ -3763,7 +3871,9 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
                     <Star className="w-4.5 h-4.5 text-amber-500" />
                   </div>
                   <div>
-                    <div className="text-2xl font-black text-[#1E4D2B] leading-none">4.8</div>
+                    <div className="text-2xl font-black text-[#1E4D2B] leading-none">
+                      {dashboardStats?.metrics?.avg_rating !== undefined ? dashboardStats.metrics.avg_rating.toFixed(1) : '0.0'}
+                    </div>
                     <div className="text-[10px] uppercase font-black tracking-wider text-gray-400 mt-1 block">Rating</div>
                   </div>
                 </div>
@@ -3774,7 +3884,9 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
                     <AlertTriangle className="w-4.5 h-4.5 text-rose-550" />
                   </div>
                   <div>
-                    <div className="text-2xl font-black text-[#1E4D2B] leading-none">6</div>
+                    <div className="text-2xl font-black text-[#1E4D2B] leading-none">
+                      {dashboardStats?.metrics?.incident_count !== undefined ? dashboardStats.metrics.incident_count : 0}
+                    </div>
                     <div className="text-[10px] uppercase font-black tracking-wider text-gray-400 mt-1 block">Incidents</div>
                   </div>
                 </div>
@@ -3898,7 +4010,7 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
                         }
 
                         return filtered.map((item, index) => {
-                          const formattedDate = item.scheduled_date || '2026-05-10';
+                          const formattedDate = item.scheduled_date || new Date().toISOString().split('T')[0];
                           
                           // Extract time format, e.g. "6:35 AM"
                           let timeStr = '6:35 AM';
@@ -4690,11 +4802,11 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div className="p-4 bg-slate-50 rounded-2xl border border-gray-150">
                           <span className="text-[9px] text-gray-400 font-bold uppercase tracking-widest">CONTRACT SCHEME</span>
-                          <h4 className="text-sm font-black text-gray-800 mt-1">Residential Complex Elite</h4>
+                          <h4 className="text-sm font-black text-gray-800 mt-1">{getContractScheme()}</h4>
                         </div>
                         <div className="p-4 bg-slate-50 rounded-2xl border border-gray-150">
                           <span className="text-[9px] text-gray-400 font-bold uppercase tracking-widest">DEVICE BOUND</span>
-                          <h4 className="text-sm font-black text-gray-800 mt-1">Zebra PWA Rugged V2</h4>
+                          <h4 className="text-sm font-black text-gray-800 mt-1">{getDeviceBound()}</h4>
                         </div>
                       </div>
 
@@ -4706,7 +4818,7 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
                             <input 
                               type="text" 
                               disabled 
-                              value="sunil_operator_elite" 
+                              value={localUser?.email ? localUser.email.split('@')[0] : 'sunil_operator_elite'} 
                               className="w-full mt-1.5 bg-gray-50 border border-gray-150 text-gray-500 rounded-xl p-2.5 text-xs font-semibold cursor-not-allowed" 
                             />
                           </div>
@@ -4715,7 +4827,7 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
                             <input 
                               type="text" 
                               disabled 
-                              value="+94 77 123 4567" 
+                              value={localUser?.phone || '+94 77 123 4567'} 
                               className="w-full mt-1.5 bg-gray-50 border border-gray-150 text-gray-500 rounded-xl p-2.5 text-xs font-semibold cursor-not-allowed" 
                             />
                           </div>
@@ -4818,7 +4930,7 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
                 <Compass className="w-5 h-5 text-[#1E4D2B] animate-spin-slow" />
                 <div>
                   <h3 className="text-sm font-black text-[#1E4D2B]">EcoTrack Route Visualizer</h3>
-                  <p className="text-[10px] text-gray-400 font-bold uppercase">Block A • Level 3 Plan</p>
+                  <p className="text-[10px] text-gray-400 font-bold uppercase">{routeHeaderBlock} • Route Plan</p>
                 </div>
               </div>
               <button 
@@ -5086,7 +5198,7 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
                 </div>
                 <div className="flex items-center gap-2.5">
                   <Check className="w-4 h-4 text-emerald-600 shrink-0 stroke-[2.5]" />
-                  <span>Tasks completed: 4 of 18 units</span>
+                  <span>Tasks completed: {doneCount} of {totalCount} units</span>
                 </div>
               </div>
             </div>

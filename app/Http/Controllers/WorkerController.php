@@ -22,12 +22,28 @@ class WorkerController extends Controller
         $worker = $request->user();
         $todayStr = Carbon::today()->format('Y-m-d');
 
-        // Look up tasks scheduled for today and matched to worker shift
-        $tasks = Job::with(['block', 'floor', 'unit'])
-            ->where('worker_id', $worker->id)
+        $query = Job::with(['block', 'floor', 'unit'])
             ->whereDate('scheduled_date', $todayStr)
-            ->where('shift', $worker->shift ?? 'morning')
-            ->orderBy('status', 'asc')
+            ->where('shift', $worker->shift ?? 'morning');
+
+        // Filter by assigned blocks or explicit worker assignment
+        $assignedBlocksStr = $worker->assigned_blocks ?: '';
+        if ($assignedBlocksStr && strtolower($assignedBlocksStr) !== 'all blocks') {
+            $blocksList = array_map('trim', explode(',', $assignedBlocksStr));
+            $query->where(function($q) use ($worker, $blocksList) {
+                $q->where('worker_id', $worker->id)
+                  ->orWhere(function($sub) use ($blocksList) {
+                      $sub->whereNull('worker_id')
+                          ->whereHas('block', function($blockQ) use ($blocksList) {
+                              $blockQ->whereIn('name', $blocksList);
+                          });
+                  });
+            });
+        } else {
+            $query->where('worker_id', $worker->id);
+        }
+
+        $tasks = $query->orderBy('status', 'asc')
             ->orderBy('id', 'asc')
             ->get();
 
@@ -482,11 +498,41 @@ class WorkerController extends Controller
                     'rating_count' => (int) $ratingCount,
                     'eco_score' => (float) $ecoScore,
                     'distance_today' => (float) $distanceToday,
+                    'incident_count' => (int) $issueJobs,
                 ],
                 'leaderboard' => $rankedLeaderboard,
                 'feedback' => $feedback,
                 'notifications' => $allNotifications
             ]
         ]);
+    }
+
+    /**
+     * Find a job that is either explicitly assigned to the worker or is in one of their assigned blocks.
+     */
+    private function findJobForWorker($worker, $id, $relations = [])
+    {
+        $query = Job::query();
+        if (!empty($relations)) {
+            $query->with($relations);
+        }
+        
+        $assignedBlocksStr = $worker->assigned_blocks ?: '';
+        if ($assignedBlocksStr && strtolower($assignedBlocksStr) !== 'all blocks') {
+            $blocksList = array_map('trim', explode(',', $assignedBlocksStr));
+            $query->where(function($q) use ($worker, $blocksList) {
+                $q->where('worker_id', $worker->id)
+                  ->orWhere(function($sub) use ($blocksList) {
+                      $sub->whereNull('worker_id')
+                          ->whereHas('block', function($blockQ) use ($blocksList) {
+                              $blockQ->whereIn('name', $blocksList);
+                          });
+                  });
+            });
+        } else {
+            $query->where('worker_id', $worker->id);
+        }
+        
+        return $query->findOrFail($id);
     }
 }

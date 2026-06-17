@@ -42,8 +42,12 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
   const [jobsSubView, setJobsSubView] = useState<'list' | 'calendar'>('list');
   const [selectedJobId, setSelectedJobId] = useState<string | number | null>(null);
   const [jobsFilterTab, setJobsFilterTab] = useState<'all' | 'pending' | 'in_progress' | 'done' | 'issue'>('all');
-  const [selectedCalendarMonth, setSelectedCalendarMonth] = useState<string>('May 2026');
-  const [selectedCalendarDate, setSelectedCalendarDate] = useState<string>('2026-05-10');
+  const [selectedCalendarMonth, setSelectedCalendarMonth] = useState<string>(() => {
+    const now = new Date();
+    const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    return `${months[now.getMonth()]} ${now.getFullYear()}`;
+  });
+  const [selectedCalendarDate, setSelectedCalendarDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
 
   const monthsList = [
     'January', 'February', 'March', 'April', 'May', 'June',
@@ -883,7 +887,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
     block_id: '',
     floor_id: '3',
     unit_id: '',
-    scheduled_date: '2026-05-20',
+    scheduled_date: new Date().toISOString().split('T')[0],
     shift: 'morning'
   });
 

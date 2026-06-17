@@ -152,7 +152,7 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
   const [specialCategory, setSpecialCategory] = useState<'Furniture' | 'E-Waste' | 'Construction' | 'Other'>('Furniture');
   const [specialDescription, setSpecialDescription] = useState('Old sofa, 3-seater');
   const [specialWeight, setSpecialWeight] = useState('45');
-  const [specialDate, setSpecialDate] = useState('2026-05-13');
+  const [specialDate, setSpecialDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [specialPhotoName, setSpecialPhotoName] = useState<string | null>(null);
   const [specialCardNumber, setSpecialCardNumber] = useState('4321 4567 8910 4821');
   const [specialCardExpiry, setSpecialCardExpiry] = useState('12 / 28');
@@ -627,7 +627,7 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
   const [bulkBooking, setBulkBooking] = useState({
     category: 'Electronic Waste',
     description: '',
-    pickup_date: '2026-05-21',
+    pickup_date: new Date().toISOString().split('T')[0],
     shift: 'morning'
   });
 
@@ -638,8 +638,11 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
     job_id: ''
   });
   const [myComplaints, setMyComplaints] = useState<any[]>([]);
-  const [complaintDate, setComplaintDate] = useState('2026-05-09');
-  const [complaintTime, setComplaintTime] = useState('06:30');
+  const [complaintDate, setComplaintDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [complaintTime, setComplaintTime] = useState(() => {
+    const now = new Date();
+    return `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+  });
   const [complaintWhatHappened, setComplaintWhatHappened] = useState<'not_collected' | 'too_late' | 'wrong_sorting' | 'other'>('not_collected');
   const [complaintDescription, setComplaintDescription] = useState('Bag was kept out at 6:25 AM. No collection happened. This is the second time this month.');
   const [complaintStatusView, setComplaintStatusView] = useState<'form' | 'success'>('form');
@@ -1043,7 +1046,7 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
       if (!response.ok) throw new Error(data.message || 'Server booking reject.');
 
       setMessage(`Special Pickup scheduled successfully! Invoice Reference: ${data.data.reference_code}. LKR 1500 billed to account.`);
-      setBulkBooking({ category: 'Electronic Waste', description: '', pickup_date: '2026-05-21', shift: 'morning' });
+      setBulkBooking({ category: 'Electronic Waste', description: '', pickup_date: new Date().toISOString().split('T')[0], shift: 'morning' });
       fetchResidentProfile();
       setActiveTab('billing');
     } catch {
@@ -1055,7 +1058,7 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
       ]);
       setUnitProfile((prev: any) => ({ ...prev, unpaid_balance_lkr: prev.unpaid_balance_lkr + 1500, pending_bills_count: prev.pending_bills_count + 1 }));
       setMessage(`Special Pickup logged successfully in sandbox mode. Invoice Reference: ${mockRef}. LKR 1,500 billed.`);
-      setBulkBooking({ category: 'Electronic Waste', description: '', pickup_date: '2026-05-21', shift: 'morning' });
+      setBulkBooking({ category: 'Electronic Waste', description: '', pickup_date: new Date().toISOString().split('T')[0], shift: 'morning' });
       setActiveTab('billing');
     } finally {
       setActionLoading(false);
@@ -4559,8 +4562,11 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
                               <button
                                 type="button"
                                 onClick={() => {
-                                  setComplaintDate('2026-05-09');
-                                  setComplaintTime('06:30');
+                                  setComplaintDate(new Date().toISOString().split('T')[0]);
+                                  setComplaintTime(() => {
+                                    const now = new Date();
+                                    return `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+                                  });
                                   setComplaintWhatHappened('not_collected');
                                   setComplaintDescription('Bag was kept out at 6:25 AM. No collection happened. This is the second time this month.');
                                 }}
