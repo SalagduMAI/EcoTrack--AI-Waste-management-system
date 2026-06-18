@@ -324,7 +324,7 @@ class AdminController extends Controller
 
         $fields = [
             'nic', 'move_in_date', 'occupancy_type',
-            'recycling_plan', 'emergency_contact_name', 'emergency_contact_phone', 'notes', 'language'
+            'recycling_plan', 'emergency_contact_name', 'emergency_contact_phone', 'notes', 'language', 'assigned_blocks'
         ];
 
         foreach ($fields as $field) {
@@ -356,6 +356,15 @@ class AdminController extends Controller
             ], $extraData);
 
             $user->update($updateFields);
+
+            if ($user->role === 'worker') {
+                \App\Models\WorkerNotification::create([
+                    'worker_id' => $user->id,
+                    'type' => 'profile_update',
+                    'title' => 'Profile Updated by Admin',
+                    'message' => "Admin updated your profile details. Shift: " . ucfirst($user->shift) . ", Assigned Blocks: " . ($user->assigned_blocks ?: 'All Blocks') . ".",
+                ]);
+            }
 
             // Auto assign unit relationship if standard resident role
             if ($user->role === 'resident' && $unitId) {
@@ -411,6 +420,15 @@ class AdminController extends Controller
         ], $extraData);
 
         $user = User::create($createFields);
+
+        if ($user->role === 'worker') {
+            \App\Models\WorkerNotification::create([
+                'worker_id' => $user->id,
+                'type' => 'profile_update',
+                'title' => 'Welcome to EcoTrack!',
+                'message' => "Your profile has been created. Shift: " . ucfirst($user->shift) . ", Assigned Blocks: " . ($user->assigned_blocks ?: 'All Blocks') . ".",
+            ]);
+        }
 
         // Auto assign unit relationship if standard resident role
         if ($user->role === 'resident' && $unitId) {

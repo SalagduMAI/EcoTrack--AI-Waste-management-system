@@ -15,6 +15,68 @@ interface WorkerPortalProps {
   onUserUpdate?: (user: any) => void;
 }
 
+const getLocalDateString = (d = new Date()) => {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const getLocalISOString = (d = new Date()) => {
+  const tzOffset = -d.getTimezoneOffset();
+  const diff = tzOffset >= 0 ? '+' : '-';
+  const pad = (num: number) => String(num).padStart(2, '0');
+  const pad3 = (num: number) => String(num).padStart(3, '0');
+  
+  return d.getFullYear() +
+    '-' + pad(d.getMonth() + 1) +
+    '-' + pad(d.getDate()) +
+    'T' + pad(d.getHours()) +
+    ':' + pad(d.getMinutes()) +
+    ':' + pad(d.getSeconds()) +
+    '.' + pad3(d.getMilliseconds()) +
+    diff + pad(Math.floor(Math.abs(tzOffset) / 60)) +
+    ':' + pad(Math.abs(tzOffset) % 60);
+};
+
+const renderTrendBadge = (trend: string, labelSuffix: string = '') => {
+  if (!trend) return null;
+  const isPositive = trend.startsWith('+');
+  const isNegative = trend.startsWith('-');
+  const isNeutral = !isPositive && !isNegative;
+  
+  let bgClass = 'bg-slate-100 text-slate-700 group-hover:bg-slate-700';
+  if (isPositive) bgClass = 'bg-[#EBFDF2] text-[#166534] group-hover:bg-[#1E4D2B]';
+  if (isNegative) bgClass = 'bg-rose-50 text-rose-700 group-hover:bg-rose-600';
+  
+  let displayTrend = trend;
+  if (isNeutral && trend === '0') {
+    displayTrend = 'No change';
+  }
+  
+  return (
+    <span className={`inline-block text-[9px] font-black px-1.5 py-0.5 rounded-md mb-3 group-hover:text-white transition-colors ${bgClass}`}>
+      {displayTrend}{labelSuffix}
+    </span>
+  );
+};
+
+const renderRatingTrendBadge = (trend: string) => {
+  if (!trend) return null;
+  const isPositive = trend.startsWith('+');
+  const isNegative = trend.startsWith('-');
+  
+  let bgClass = 'bg-[#FEF3C7] text-[#D97706] group-hover:bg-amber-500';
+  if (isPositive) bgClass = 'bg-[#EBFDF2] text-[#166534] group-hover:bg-[#1E4D2B]';
+  if (isNegative) bgClass = 'bg-rose-50 text-rose-700 group-hover:bg-rose-600';
+  
+  return (
+    <span className={`inline-block text-[9px] font-black px-1.5 py-0.5 rounded-md mb-3 group-hover:text-white transition-colors ${bgClass}`}>
+      {trend}
+    </span>
+  );
+};
+
 export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: WorkerPortalProps) {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'tasks' | 'scan' | 'history' | 'notifications' | 'offline' | 'profile' | 'settings'>('dashboard');
   const [settingsSubTab, setSettingsSubTab] = useState<'profile' | 'security' | 'help'>('profile');
@@ -98,7 +160,7 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
     for (let i = 6; i >= 0; i--) {
       const d = new Date();
       d.setDate(today.getDate() - i);
-      const dateStr = d.toISOString().slice(0, 10); // YYYY-MM-DD
+      const dateStr = getLocalDateString(d); // YYYY-MM-DD
       const dayName = d.toLocaleDateString('en-US', { weekday: 'short' });
       
       // Count completed jobs on this date
@@ -619,7 +681,7 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
         tasks: nextTasks,
         history: nextHistory,
         dashboardStats: nextStats || cached.dashboardStats,
-        syncedAt: new Date().toISOString()
+        syncedAt: getLocalISOString()
       }));
     } catch (err) {
       console.warn('Unable to persist worker data cache', err);
@@ -673,6 +735,21 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
       }
       if (nextStats) {
         setDashboardStats(nextStats);
+        if (nextStats.user) {
+          const formattedUser = {
+            ...localUser,
+            ...nextStats.user,
+            shift: nextStats.user.shift ? nextStats.user.shift.charAt(0).toUpperCase() + nextStats.user.shift.slice(1) : localUser?.shift
+          };
+          setLocalUser(formattedUser);
+          if (onUserUpdate) {
+            onUserUpdate({
+              ...user,
+              ...nextStats.user,
+              shift: nextStats.user.shift ? nextStats.user.shift.charAt(0).toUpperCase() + nextStats.user.shift.slice(1) : user?.shift
+            });
+          }
+        }
       }
 
       if (nextTasks || nextHistory || nextStats) {
@@ -783,7 +860,7 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
     setActionLoading(true);
     setMessage(null);
 
-    const timedAt = new Date().toISOString();
+    const timedAt = getLocalISOString();
     const payload: OfflineQueueItem = {
       job_id: id,
       action: 'STATUS_MARKED_IN_PROGRESS',
@@ -848,7 +925,7 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
     setShowQRModal(false);
     setMessage(null);
 
-    const timedAt = new Date().toISOString();
+    const timedAt = getLocalISOString();
     const payload: OfflineQueueItem = {
       job_id: finalJob.id,
       action: 'STATUS_MARKED_DONE',
@@ -1046,7 +1123,7 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
     setShowIncidentModal(false);
     setMessage(null);
 
-    const timedAt = new Date().toISOString();
+    const timedAt = getLocalISOString();
     const payload: OfflineQueueItem = {
       job_id: activeJob.id,
       action: 'INCIDENT_REPORTED',
@@ -2011,9 +2088,7 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
                   title="Click to view today's tasks list"
                 >
                   <div>
-                    <span className="inline-block text-[9px] font-black bg-[#EBFDF2] text-[#166534] px-1.5 py-0.5 rounded-md mb-3 group-hover:bg-[#1E4D2B] group-hover:text-white transition-colors">
-                      +2 vs yesterday
-                    </span>
+                    {renderTrendBadge(dashboardStats?.metrics?.jobs_today_trend ?? '0', ' vs yesterday')}
                     <p className="text-xl font-black text-gray-950 mt-1">{doneCount} / {totalCount}</p>
                     <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mt-0.5">Jobs Today</p>
                   </div>
@@ -2027,10 +2102,12 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
                   title="Click to view delivery route steps"
                 >
                   <div>
-                    <span className="inline-block text-[9px] font-black bg-[#EBFDF2] text-[#166534] px-1.5 py-0.5 rounded-md mb-3 group-hover:bg-[#1E4D2B] group-hover:text-white transition-colors">
-                      +1.2%
-                    </span>
-                    <p className="text-xl font-black text-gray-950 mt-1">{dashboardStats?.metrics?.on_time_pct ?? 95}%</p>
+                    {renderTrendBadge(dashboardStats?.metrics?.on_time_trend ?? 'Steady')}
+                    <p className="text-xl font-black text-gray-950 mt-1">
+                      {dashboardStats?.metrics?.on_time_pct !== undefined && dashboardStats?.metrics?.on_time_pct !== null
+                        ? `${dashboardStats.metrics.on_time_pct}%`
+                        : 'N/A'}
+                    </p>
                     <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mt-0.5">On-time</p>
                   </div>
                   <span className="text-[10px] text-gray-500 font-bold mt-3 group-hover:text-gray-800 transition-colors">30-day avg</span>
@@ -2043,10 +2120,8 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
                   title="Click to view detailed rating reviews"
                 >
                   <div>
-                    <span className="inline-block text-[9px] font-black bg-[#FEF3C7] text-[#D97706] px-1.5 py-0.5 rounded-md mb-3 group-hover:bg-amber-500 group-hover:text-white transition-colors">
-                      Steady
-                    </span>
-                    <p className="text-xl font-black text-gray-950 mt-1">{dashboardStats?.metrics?.avg_rating ?? '4.8'} ★</p>
+                    {renderRatingTrendBadge(dashboardStats?.metrics?.rating_trend ?? 'Steady')}
+                    <p className="text-xl font-black text-gray-950 mt-1">{dashboardStats?.metrics?.avg_rating ?? '0.0'} ★</p>
                     <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mt-0.5">Rating</p>
                   </div>
                   <span className="text-[10px] text-gray-500 font-bold mt-3 group-hover:text-gray-800 transition-colors">{dashboardStats?.metrics?.rating_count ?? 0} ratings</span>
@@ -2060,9 +2135,11 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
                 >
                   <div>
                     <span className="inline-block text-[9px] font-black bg-[#E3F2FD] text-[#0D47A1] px-1.5 py-0.5 rounded-md mb-3 group-hover:bg-blue-600 group-hover:text-white transition-colors">
-                      Top 10%
+                      {dashboardStats?.metrics?.eco_score_rank 
+                        ? `Rank ${dashboardStats.metrics.eco_score_rank} of ${dashboardStats.metrics.eco_score_total}`
+                        : 'Top 10%'}
                     </span>
-                    <p className="text-xl font-black text-gray-950 mt-1">{dashboardStats?.metrics?.eco_score ?? '5.0'} ★</p>
+                    <p className="text-xl font-black text-gray-950 mt-1">{dashboardStats?.metrics?.eco_score ?? '0.0'} ★</p>
                     <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mt-0.5">Eco Score</p>
                   </div>
                   <span className="text-[10px] text-gray-500 font-bold mt-3 group-hover:text-gray-800 transition-colors">Recycle rate</span>
@@ -2072,16 +2149,18 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
                 <div 
                   onClick={() => setActiveTab('tasks')}
                   className="p-4 bg-white border border-gray-200/60 rounded-2xl flex flex-col justify-between shadow-xs hover:border-[#1E4D2B]/50 hover:bg-emerald-50/10 cursor-pointer group transition-all text-left"
-                  title="Click to view overall route details"
+                  title="Click to view today's tasks"
                 >
                   <div>
                     <span className="inline-block text-[9px] font-black bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded-md mb-3 group-hover:bg-slate-700 group-hover:text-white transition-colors">
-                      Of 4 km est.
+                      Of {dashboardStats?.metrics?.floors_total_today ?? 0} floors est.
                     </span>
-                    <p className="text-xl font-black text-gray-950 mt-1">{dashboardStats?.metrics?.distance_today ?? '0.0'} km</p>
-                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mt-0.5">Distance</p>
+                    <p className="text-xl font-black text-gray-950 mt-1">
+                      {dashboardStats?.metrics?.floors_cleared_today ?? 0} / {dashboardStats?.metrics?.floors_total_today ?? 0}
+                    </p>
+                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mt-0.5">Floors Cleared</p>
                   </div>
-                  <span className="text-[10px] text-gray-500 font-bold mt-3 group-hover:text-gray-800 transition-colors">Walked today</span>
+                  <span className="text-[10px] text-gray-500 font-bold mt-3 group-hover:text-gray-800 transition-colors">Completed today</span>
                 </div>
               </div>
 
@@ -3029,7 +3108,7 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
                             setActionLoading(true);
                             setMessage(null);
                             const finalReason = incidentReason + (incidentNote ? ': ' + incidentNote : '');
-                            const timedAt = new Date().toISOString();
+                            const timedAt = getLocalISOString();
                             const payload: OfflineQueueItem = {
                               job_id: activeJob.id,
                               action: 'INCIDENT_REPORTED',
@@ -3859,7 +3938,9 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
                   </div>
                   <div>
                     <div className="text-2xl font-black text-[#1E4D2B] leading-none">
-                      {dashboardStats?.metrics?.on_time_pct !== undefined ? `${dashboardStats.metrics.on_time_pct}%` : '100%'}
+                      {dashboardStats?.metrics?.on_time_pct !== undefined && dashboardStats?.metrics?.on_time_pct !== null 
+                        ? `${dashboardStats.metrics.on_time_pct}%` 
+                        : 'N/A'}
                     </div>
                     <div className="text-[10px] uppercase font-black tracking-wider text-gray-400 mt-1 block">On time</div>
                   </div>
@@ -4010,7 +4091,7 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
                         }
 
                         return filtered.map((item, index) => {
-                          const formattedDate = item.scheduled_date || new Date().toISOString().split('T')[0];
+                          const formattedDate = item.scheduled_date || getLocalDateString();
                           
                           // Extract time format, e.g. "6:35 AM"
                           let timeStr = '6:35 AM';
@@ -4554,7 +4635,9 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
                         <Zap className="w-4 h-4 text-indigo-600 stroke-[2.2]" />
                       </div>
                       <span className="text-sm font-black text-slate-800 font-sans tracking-tight">
-                        {dashboardStats?.metrics?.on_time_pct !== undefined && dashboardStats?.metrics?.on_time_pct !== null ? dashboardStats.metrics.on_time_pct : 100}%
+                        {dashboardStats?.metrics?.on_time_pct !== undefined && dashboardStats?.metrics?.on_time_pct !== null 
+                          ? `${dashboardStats.metrics.on_time_pct}%` 
+                          : 'N/A'}
                       </span>
                       <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">On time</span>
                     </div>

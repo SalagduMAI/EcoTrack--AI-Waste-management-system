@@ -347,32 +347,86 @@ class WorkerController extends Controller
         $worker = $request->user();
 
         // 1. CALCULATE WORKER PERFORMANCE METRICS
-        $totalJobs = Job::where('worker_id', $worker->id)->count();
-        $doneJobs = Job::where('worker_id', $worker->id)->where('status', 'done')->count();
-        $issueJobs = Job::where('worker_id', $worker->id)->where('status', 'issue')->count();
+        $todayStr = Carbon::today()->format('Y-m-d');
+        $yesterdayStr = Carbon::yesterday()->format('Y-m-d');
 
-        $onTimePct = null;
-        if ($doneJobs + $issueJobs > 0) {
-            $onTimePct = (int) round(($doneJobs / ($doneJobs + $issueJobs)) * 100);
-        } else {
-            $onTimePct = 100;
+        // Jobs Today
+        $totalToday = Job::where('worker_id', $worker->id)->whereDate('scheduled_date', $todayStr)->count();
+        $doneToday = Job::where('worker_id', $worker->id)->whereDate('scheduled_date', $todayStr)->where('status', 'done')->count();
+        $doneYesterday = Job::where('worker_id', $worker->id)->whereDate('scheduled_date', $yesterdayStr)->where('status', 'done')->count();
+        
+        $jobsTodayTrendVal = $doneToday - $doneYesterday;
+        $jobsTodayTrend = $jobsTodayTrendVal > 0 ? "+{$jobsTodayTrendVal}" : ($jobsTodayTrendVal < 0 ? "{$jobsTodayTrendVal}" : "0");
+
+        // 30-day On-time Percentage
+        $done30 = Job::where('worker_id', $worker->id)->where('status', 'done')->where('updated_at', '>=', Carbon::now()->subDays(30))->count();
+        $issue30 = Job::where('worker_id', $worker->id)->where('status', 'issue')->where('updated_at', '>=', Carbon::now()->subDays(30))->count();
+
+        $onTimePct30 = null;
+        if ($done30 + $issue30 > 0) {
+            $onTimePct30 = (int) round(($done30 / ($done30 + $issue30)) * 100);
         }
 
+        // Previous 30-day On-time Percentage (days 31 to 60)
+        $donePrev30 = Job::where('worker_id', $worker->id)->where('status', 'done')->whereBetween('updated_at', [Carbon::now()->subDays(60), Carbon::now()->subDays(30)])->count();
+        $issuePrev30 = Job::where('worker_id', $worker->id)->where('status', 'issue')->whereBetween('updated_at', [Carbon::now()->subDays(60), Carbon::now()->subDays(30)])->count();
+
+        $onTimePctPrev30 = null;
+        if ($donePrev30 + $issuePrev30 > 0) {
+            $onTimePctPrev30 = (int) round(($donePrev30 / ($donePrev30 + $issuePrev30)) * 100);
+        }
+
+        $onTimeTrend = 'Steady';
+        if ($onTimePct30 !== null && $onTimePctPrev30 !== null) {
+            $diff = $onTimePct30 - $onTimePctPrev30;
+            $onTimeTrend = $diff > 0 ? "+{$diff}%" : ($diff < 0 ? "{$diff}%" : "Steady");
+        } elseif ($onTimePct30 !== null) {
+            $onTimeTrend = 'New';
+        } else {
+            $onTimeTrend = 'No data';
+        }
+
+        // Average Rating
         $avgRatingVal = \App\Models\Rating::where('worker_id', $worker->id)->avg('rating');
         $avgRating = $avgRatingVal !== null ? round($avgRatingVal, 1) : 0.0;
         $ratingCount = \App\Models\Rating::where('worker_id', $worker->id)->count();
 
+        // 30-day Rating Trend
+        $avgRating30 = \App\Models\Rating::where('worker_id', $worker->id)->where('created_at', '>=', Carbon::now()->subDays(30))->avg('rating');
+        $avgRatingPrev30 = \App\Models\Rating::where('worker_id', $worker->id)->whereBetween('created_at', [Carbon::now()->subDays(60), Carbon::now()->subDays(30)])->avg('rating');
+
+        $ratingTrend = 'Steady';
+        if ($avgRating30 !== null && $avgRatingPrev30 !== null) {
+            $diff = round($avgRating30 - $avgRatingPrev30, 2);
+            $ratingTrend = $diff > 0 ? "+{$diff}" : ($diff < 0 ? "{$diff}" : "Steady");
+        } elseif ($avgRating30 !== null) {
+            $ratingTrend = 'New';
+        } else {
+            $ratingTrend = 'No rating';
+        }
+
+        // Eco Score (based on average rating)
         $ecoScore = 0.0;
         if ($avgRating > 0) {
             $ecoScore = $avgRating >= 4.8 ? 5.0 : round(4.0 + ($avgRating * 0.2), 1);
         }
 
-        $todayStr = Carbon::today()->format('Y-m-d');
-        $todayJobsDoneCount = Job::where('worker_id', $worker->id)
-            ->whereDate('scheduled_date', $todayStr)
-            ->where('status', 'done')
-            ->count();
-        $distanceToday = round($todayJobsDoneCount * 0.15, 1);
+        // Floors Cleared Today
+        $todayJobs = Job::where('worker_id', $worker->id)->whereDate('scheduled_date', $todayStr)->get();
+        $totalFloorsToday = $todayJobs->pluck('floor_id')->unique()->count();
+        
+        $completedFloorsToday = 0;
+        if ($totalFloorsToday > 0) {
+            $jobsByFloor = $todayJobs->groupBy('floor_id');
+            foreach ($jobsByFloor as $floorId => $jobs) {
+                $allDone = $jobs->every(function ($job) {
+                    return $job->status === 'done';
+                });
+                if ($allDone) {
+                    $completedFloorsToday++;
+                }
+            }
+        }
 
         // 2. CONSTRUCT LEADERBOARD STATS
         $workers = \App\Models\User::where('role', 'worker')->get();
@@ -401,10 +455,16 @@ class WorkerController extends Controller
 
         $rankedLeaderboard = [];
         $rank = 1;
+        $currentWorkerRank = 1;
         foreach ($leaderboard as $item) {
-            $item['rank'] = $rank++;
+            $item['rank'] = $rank;
+            if ($item['is_current']) {
+                $currentWorkerRank = $rank;
+            }
             $rankedLeaderboard[] = $item;
+            $rank++;
         }
+        $totalWorkersCount = count($rankedLeaderboard);
 
         // 3. FETCH RECENT RESIDENT FEEDBACK
         $feedback = \App\Models\Rating::with(['resident', 'job.unit'])
@@ -484,25 +544,58 @@ class WorkerController extends Controller
             ]
         ];
 
-        $allNotifications = collect($ratingNotifications)
+        $dbNotifications = \App\Models\WorkerNotification::where('worker_id', $worker->id)
+            ->orderBy('created_at', 'desc')
+            ->take(20)
+            ->get()
+            ->map(function ($n) {
+                return [
+                    'id' => 'db_' . $n->id,
+                    'type' => $n->type,
+                    'title' => $n->title,
+                    'message' => $n->message,
+                    'time' => $n->created_at ? $n->created_at->diffForHumans() : 'Just now',
+                    'read' => (bool) $n->read
+                ];
+            });
+
+        $allNotifications = collect($dbNotifications)
+            ->merge($ratingNotifications)
             ->merge($incidentNotifications)
             ->merge($announcements)
             ->values();
+
+        $issueJobsCount = Job::where('worker_id', $worker->id)->where('status', 'issue')->count();
 
         return response()->json([
             'status' => 'success',
             'data' => [
                 'metrics' => [
-                    'on_time_pct' => (int) $onTimePct,
+                    'on_time_pct' => $onTimePct30,
+                    'on_time_trend' => $onTimeTrend,
                     'avg_rating' => (float) round($avgRating, 1),
                     'rating_count' => (int) $ratingCount,
+                    'rating_trend' => $ratingTrend,
                     'eco_score' => (float) $ecoScore,
-                    'distance_today' => (float) $distanceToday,
-                    'incident_count' => (int) $issueJobs,
+                    'eco_score_rank' => (int) $currentWorkerRank,
+                    'eco_score_total' => (int) $totalWorkersCount,
+                    'floors_cleared_today' => (int) $completedFloorsToday,
+                    'floors_total_today' => (int) $totalFloorsToday,
+                    'jobs_today_trend' => $jobsTodayTrend,
+                    'incident_count' => (int) $issueJobsCount,
                 ],
                 'leaderboard' => $rankedLeaderboard,
                 'feedback' => $feedback,
-                'notifications' => $allNotifications
+                'notifications' => $allNotifications,
+                'user' => [
+                    'id' => $worker->id,
+                    'name' => $worker->name,
+                    'email' => $worker->email,
+                    'phone' => $worker->phone,
+                    'role' => $worker->role,
+                    'shift' => $worker->shift,
+                    'profile_photo_url' => $worker->profile_photo_url ?? ($worker->profile_photo_path ? '/storage/' . $worker->profile_photo_path : null),
+                ]
             ]
         ]);
     }

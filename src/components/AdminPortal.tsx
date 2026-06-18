@@ -23,6 +23,13 @@ interface AdminPortalProps {
   onUserUpdate?: (freshUser: any) => void;
 }
 
+const getLocalDateString = (d = new Date()) => {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 export default function AdminPortal({ token, user, onLogout, onUserUpdate }: AdminPortalProps) {
   // Navigation tabs mirroring the screenshot sidebar
   const [activeTab, setActiveTab] = useState<'dashboard' | 'housing' | 'users' | 'jobs' | 'qrcodes' | 'payments' | 'complaints' | 'reports' | 'settings' | 'logout'>('dashboard');
@@ -47,7 +54,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
     const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
     return `${months[now.getMonth()]} ${now.getFullYear()}`;
   });
-  const [selectedCalendarDate, setSelectedCalendarDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
+  const [selectedCalendarDate, setSelectedCalendarDate] = useState<string>(() => getLocalDateString());
 
   const monthsList = [
     'January', 'February', 'March', 'April', 'May', 'June',
@@ -368,7 +375,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
     block: 'Block A',
     unit: 'A-101',
     language: 'English',
-    moveInDate: new Date().toISOString().split('T')[0],
+    moveInDate: getLocalDateString(),
     avatar: '',
     nic: '',
     occupancyType: 'Owner-Occupier',
@@ -887,7 +894,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
     block_id: '',
     floor_id: '3',
     unit_id: '',
-    scheduled_date: new Date().toISOString().split('T')[0],
+    scheduled_date: getLocalDateString(),
     shift: 'morning'
   });
 
@@ -2821,7 +2828,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
             block: row.block,
             unit: row.unit_number,
             language: 'English',
-            moveInDate: new Date().toISOString().split('T')[0],
+            moveInDate: getLocalDateString(),
             avatar: initials || 'R',
             nic: `199${Math.floor(100000 + Math.random() * 900000)}V`,
             occupancyType: 'Tenant',
@@ -3334,7 +3341,10 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
             return 'morning';
           })(), 
           role: 'worker',
-          password: 'password123' // satisfy validation rule minimum 6 chars
+          password: 'password123', // satisfy validation rule minimum 6 chars
+          nic: workerForm.nic,
+          assigned_blocks: workerForm.assignedBlocks || 'All Blocks',
+          avatar: workerForm.avatar
         })
       });
       if (!response.ok) {
@@ -3501,7 +3511,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
       block: defaultBlock,
       unit: defaultUnit,
       language: 'English',
-      moveInDate: new Date().toISOString().split('T')[0],
+      moveInDate: getLocalDateString(),
       avatar: '',
       nic: '',
       occupancyType: 'Owner-Occupier',
@@ -4626,13 +4636,17 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                 <div className="space-y-3.5 mt-4">
                   {users.filter(u => u.role === 'worker').slice(0, 3).map((w, index) => (
                     <div key={w.id || index} className="flex justify-between items-center bg-gray-50/50 p-2.5 rounded-2xl border border-gray-100">
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-6 h-6 rounded-full bg-emerald-100 flex items-center justify-center text-[9px] font-black text-[#2E7D32]">
-                          {w.avatar || 'W'}
+                      <div className="flex items-center gap-2.5 flex-1 min-w-0">
+                        <div className="w-6 h-6 rounded-full bg-emerald-100 flex items-center justify-center text-[9px] font-black text-[#2E7D32] overflow-hidden shrink-0">
+                          {(w.avatar && (w.avatar.startsWith('http') || w.avatar.startsWith('data:') || w.avatar.startsWith('/storage') || w.avatar.includes('.'))) ? (
+                            <img src={w.avatar} alt={w.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                          ) : (
+                            (w.avatar && w.avatar.length <= 3) ? w.avatar : w.name.slice(0, 2).toUpperCase()
+                          )}
                         </div>
-                        <div>
-                          <p className="text-[10.5px] font-bold text-gray-800 leading-tight">{w.name}</p>
-                          <span className="text-[8px] text-gray-400 font-black tracking-wide uppercase mt-0.5 block">{w.shift || 'Morning'} shift</span>
+                        <div className="min-w-0">
+                          <p className="text-[10.5px] font-bold text-gray-800 leading-tight truncate">{w.name}</p>
+                          <span className="text-[8px] text-gray-400 font-black tracking-wide uppercase mt-0.5 block truncate">{w.shift || 'Morning'} shift</span>
                         </div>
                       </div>
                       <span className="flex items-center gap-1.5 text-[8.5px] font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-lg uppercase tracking-wide">
@@ -6022,9 +6036,9 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                                         {(() => {
                                           const actualWorker = users.find(u => u.name === workerName);
                                           const workerAvatar = actualWorker?.avatar;
-                                          const hasPhoto = workerAvatar && (workerAvatar.startsWith('http') || workerAvatar.startsWith('data:'));
+                                          const hasPhoto = workerAvatar && (workerAvatar.startsWith('http') || workerAvatar.startsWith('data:') || workerAvatar.startsWith('/storage') || workerAvatar.includes('.'));
                                           return (
-                                            <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-black text-white shrink-0 overflow-hidden ${hasPhoto ? 'border border-gray-100' : avatarBg}`}>
+                                            <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-black text-white shrink-0 overflow-hidden ${hasPhoto ? 'border border-gray-100 font-normal' : avatarBg}`}>
                                               {hasPhoto ? (
                                                 <img src={workerAvatar} alt={workerName} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                                               ) : (
@@ -7327,7 +7341,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                                   block: qrSelectedBlockName,
                                   unit: newQRUnitNumber.trim(),
                                   language: 'English',
-                                  moveInDate: new Date().toISOString().split('T')[0],
+                                  moveInDate: getLocalDateString(),
                                   avatar: 'AS',
                                   nic: 'N/A',
                                   occupancyType: 'Tenant',
@@ -12057,7 +12071,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                 <div className={`w-20 h-20 rounded-full border-4 border-white shadow-md flex items-center justify-center font-black text-xl overflow-hidden shrink-0 ${
                   pictureEditTarget.type === 'resident' ? 'bg-emerald-50 text-[#2E7D32]' : 'bg-blue-50 text-blue-750'
                 }`}>
-                  {(pictureEditTarget.avatar && (pictureEditTarget.avatar.startsWith('http') || pictureEditTarget.avatar.startsWith('data:'))) ? (
+                  {(pictureEditTarget.avatar && (pictureEditTarget.avatar.startsWith('http') || pictureEditTarget.avatar.startsWith('data:') || pictureEditTarget.avatar.startsWith('/storage') || pictureEditTarget.avatar.includes('.'))) ? (
                     <img src={pictureEditTarget.avatar} alt={pictureEditTarget.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                   ) : (
                     pictureEditTarget.avatar || pictureEditTarget.name.split(' ').map((n: string)=>n[0]).join('').toUpperCase().slice(0, 2)
@@ -12563,12 +12577,27 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
               {/* Header */}
               <div className="flex justify-between items-start mb-4 border-b border-gray-100 pb-3">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-blue-50 text-blue-700 border border-blue-100 flex items-center justify-center overflow-hidden shrink-0">
+                  <div 
+                    onClick={() => {
+                      setPictureEditTarget({
+                        id: inspectingWorker.id,
+                        name: inspectingWorker.name,
+                        type: 'worker',
+                        avatar: inspectingWorker.avatar || ''
+                      });
+                      setInspectingWorker(null);
+                    }}
+                    className="w-12 h-12 rounded-full bg-blue-50 text-blue-700 border border-blue-200 flex items-center justify-center overflow-hidden shrink-0 cursor-pointer relative group/avatar hover:border-blue-400 transition-all"
+                    title="Click to edit profile photo"
+                  >
                     {(inspectingWorker.avatar && (inspectingWorker.avatar.startsWith('http') || inspectingWorker.avatar.startsWith('data:') || inspectingWorker.avatar.startsWith('/storage') || inspectingWorker.avatar.includes('.'))) ? (
                       <img src={inspectingWorker.avatar} alt="Profile" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                     ) : (
-                      <span className="font-black text-xs">{(inspectingWorker.avatar && inspectingWorker.avatar.length <= 3) ? inspectingWorker.avatar : (inspectingWorker.name || 'W').slice(0, 2).toUpperCase()}</span>
+                      <span className="font-black text-sm">{(inspectingWorker.avatar && inspectingWorker.avatar.length <= 3) ? inspectingWorker.avatar : (inspectingWorker.name || 'W').slice(0, 2).toUpperCase()}</span>
                     )}
+                    <div className="absolute inset-0 bg-black/40 text-white flex items-center justify-center opacity-0 group-hover/avatar:opacity-100 transition-opacity">
+                      <Camera className="w-3.5 h-3.5 text-white" />
+                    </div>
                   </div>
                   <div>
                     <h3 className="text-base font-black text-slate-800">{inspectingWorker.name}</h3>
@@ -12582,6 +12611,25 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                 >
                   <X className="w-5 h-5" />
                 </button>
+              </div>
+
+              {/* Advanced Summary Box */}
+              <div className="grid grid-cols-3 gap-3 bg-blue-50/20 p-3 rounded-2xl border border-blue-100/50 mb-4 text-center">
+                <div className="p-2 bg-white rounded-xl border border-gray-100">
+                  <span className="block text-[8px] text-gray-400 font-extrabold uppercase">SHIFT</span>
+                  <span className="text-xs font-black text-blue-900">{inspectingWorker.shift || 'Morning'}</span>
+                </div>
+                <div className="p-2 bg-white rounded-xl border border-gray-100">
+                  <span className="block text-[8px] text-gray-400 font-extrabold uppercase">ASSIGNED TO</span>
+                  <span className="text-xs font-black text-blue-900 truncate block">{inspectingWorker.assignedBlocks || 'All Blocks'}</span>
+                </div>
+                <div className="p-2 bg-white rounded-xl border border-gray-100">
+                  <span className="block text-[8px] text-gray-400 font-extrabold uppercase">AVG RATING</span>
+                  <span className="text-xs font-black text-[#2E7D32] flex items-center justify-center gap-0.5">
+                    <Star className="w-3 h-3 fill-amber-400 stroke-amber-400" />
+                    {inspectingWorker.rating ? Number(inspectingWorker.rating).toFixed(1) : '0.0'}
+                  </span>
+                </div>
               </div>
 
               <form 
@@ -12599,10 +12647,11 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                       body: JSON.stringify({
                         name: inspectingWorker.name,
                         email: inspectingWorker.email,
-                        phone: inspectingWorker.phone,
+                        phone: inspectingWorker.phone === '+94 77 123 4567' ? '' : inspectingWorker.phone,
                         role: 'worker',
-                        nic: inspectingWorker.nic,
+                        nic: inspectingWorker.nic === 'N/A' ? '' : inspectingWorker.nic,
                         avatar: inspectingWorker.avatar,
+                        assigned_blocks: inspectingWorker.assignedBlocks === 'All Blocks' ? '' : (inspectingWorker.assignedBlocks || 'All Blocks'),
                         shift: (() => {
                           const sh = (inspectingWorker.shift || 'morning').toLowerCase();
                           if (sh.includes('morning')) return 'morning';
@@ -12629,65 +12678,72 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   
                   {/* Primary Details Block */}
-                  <div className="space-y-3.5">
-                    <p className="text-xs font-black text-blue-800 tracking-wide uppercase">📋 Personal Details</p>
+                  <div className="space-y-3.5 bg-slate-50/50 p-4 rounded-2xl border border-gray-100">
+                    <p className="text-xs font-black text-blue-800 tracking-wide uppercase flex items-center gap-1.5">
+                      <User className="w-3.5 h-3.5 text-blue-600" />
+                      <span>📋 Personal Details</span>
+                    </p>
                     
                     <div>
-                      <label className="block text-[10px] font-extrabold text-slate-700 uppercase tracking-wider mb-2">Display Name</label>
+                      <label className="block text-[10px] font-extrabold text-slate-600 uppercase tracking-wider mb-1">Display Name</label>
                       <input 
                         type="text" 
                         required
                         value={inspectingWorker.name || ''}
                         onChange={(e) => setInspectingWorker({...inspectingWorker, name: e.target.value})}
-                        className="w-full px-3 py-2 text-xs border border-gray-200 rounded-xl font-semibold text-gray-800 bg-white"
+                        className="w-full px-3 py-2 text-xs border border-gray-200 rounded-xl font-semibold text-gray-800 bg-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
                       />
                     </div>
 
                     <div>
-                      <label className="block text-[10px] font-extrabold text-slate-700 uppercase tracking-wider mb-2">National Identity Card (NIC)</label>
+                      <label className="block text-[10px] font-extrabold text-slate-600 uppercase tracking-wider mb-1">National Identity Card (NIC)</label>
                       <input 
                         type="text" 
                         required
-                        value={inspectingWorker.nic || ''}
+                        placeholder="e.g. 199912345678 or 991234567V"
+                        value={inspectingWorker.nic === 'N/A' ? '' : (inspectingWorker.nic || '')}
                         onChange={(e) => setInspectingWorker({...inspectingWorker, nic: e.target.value})}
-                        className="w-full px-3 py-2 text-xs border border-gray-200 rounded-xl font-bold text-gray-800 bg-white"
+                        className="w-full px-3 py-2 text-xs border border-gray-200 rounded-xl font-bold text-gray-800 bg-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
                       />
                     </div>
 
                     <div>
-                      <label className="block text-[10px] font-extrabold text-slate-700 uppercase tracking-wider mb-2">Email Address</label>
+                      <label className="block text-[10px] font-extrabold text-slate-600 uppercase tracking-wider mb-1">Email Address</label>
                       <input 
                         type="email" 
                         required
                         value={inspectingWorker.email || ''}
                         onChange={(e) => setInspectingWorker({...inspectingWorker, email: e.target.value})}
-                        className="w-full px-3 py-2 text-xs border border-gray-200 rounded-xl font-semibold text-gray-800 bg-white"
+                        className="w-full px-3 py-2 text-xs border border-gray-200 rounded-xl font-semibold text-gray-800 bg-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
                       />
                     </div>
 
                     <div>
-                      <label className="block text-[10px] font-extrabold text-slate-700 uppercase tracking-wider mb-2">Phone Number</label>
+                      <label className="block text-[10px] font-extrabold text-slate-600 uppercase tracking-wider mb-1">Phone Number</label>
                       <input 
                         type="text" 
                         required
-                        value={inspectingWorker.phone || ''}
+                        value={inspectingWorker.phone === '+94 77 123 4567' ? '' : (inspectingWorker.phone || '')}
                         onChange={(e) => setInspectingWorker({...inspectingWorker, phone: e.target.value})}
-                        className="w-full px-3 py-2 text-xs border border-gray-200 rounded-xl font-semibold text-gray-800 bg-white"
+                        className="w-full px-3 py-2 text-xs border border-gray-200 rounded-xl font-semibold text-gray-800 bg-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
                       />
                     </div>
 
                   </div>
 
                   {/* Secondary/System Details Block */}
-                  <div className="space-y-4">
-                    <p className="text-xs font-black text-blue-800 tracking-wide uppercase">🛠️ Allocation & Performance</p>
+                  <div className="space-y-4 bg-slate-50/50 p-4 rounded-2xl border border-gray-100">
+                    <p className="text-xs font-black text-blue-800 tracking-wide uppercase flex items-center gap-1.5">
+                      <SettingsIcon className="w-3.5 h-3.5 text-blue-600" />
+                      <span>🛠️ Allocation & Performance</span>
+                    </p>
 
                     <div>
-                      <label className="block text-[10px] font-extrabold text-slate-700 uppercase tracking-wider mb-2">Shift Schedule</label>
+                      <label className="block text-[10px] font-extrabold text-slate-600 uppercase tracking-wider mb-1">Shift Schedule</label>
                       <select
                         value={inspectingWorker.shift || 'Morning'}
                         onChange={(e) => setInspectingWorker({...inspectingWorker, shift: e.target.value})}
-                        className="w-full px-3 py-2 text-xs border border-gray-200 rounded-xl font-semibold text-gray-800 bg-white"
+                        className="w-full px-3 py-2 text-xs border border-gray-200 rounded-xl font-semibold text-gray-800 bg-white outline-none"
                       >
                         <option value="Morning">Morning Shift (06:00 - 14:00)</option>
                         <option value="Afternoon">Afternoon Shift (14:00 - 22:00)</option>
@@ -12696,23 +12752,24 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                     </div>
 
                     <div>
-                      <label className="block text-[10px] font-extrabold text-slate-700 uppercase tracking-wider mb-2">Assigned Blocks</label>
+                      <label className="block text-[10px] font-extrabold text-slate-600 uppercase tracking-wider mb-1">Assigned Blocks</label>
                       <input 
                         type="text" 
                         required
-                        value={inspectingWorker.assignedBlocks || 'All Blocks'}
+                        placeholder="e.g. Block A, Block B"
+                        value={inspectingWorker.assignedBlocks === 'All Blocks' ? '' : (inspectingWorker.assignedBlocks || '')}
                         onChange={(e) => setInspectingWorker({...inspectingWorker, assignedBlocks: e.target.value})}
-                        className="w-full px-3 py-2 text-xs border border-gray-200 rounded-xl font-semibold text-gray-800 bg-white"
+                        className="w-full px-3 py-2 text-xs border border-gray-200 rounded-xl font-semibold text-gray-800 bg-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
                       />
                     </div>
 
                     <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <label className="block text-[10px] font-extrabold text-slate-700 uppercase tracking-wider mb-1.5">Employment Status</label>
+                        <label className="block text-[10px] font-extrabold text-slate-600 uppercase tracking-wider mb-1">Employment Status</label>
                         <select
                           value={inspectingWorker.status || 'active'}
                           onChange={(e) => setInspectingWorker({...inspectingWorker, status: e.target.value})}
-                          className="w-full px-2.5 py-2 text-xs border border-gray-200 rounded-xl font-bold text-gray-800 bg-white font-semibold"
+                          className="w-full px-2.5 py-2 text-xs border border-gray-200 rounded-xl font-bold text-gray-800 bg-white outline-none"
                         >
                           <option value="active">Active On Duty</option>
                           <option value="inactive">Inactive / On Leave</option>
@@ -12720,16 +12777,11 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                       </div>
 
                       <div>
-                        <label className="block text-[10px] font-extrabold text-slate-700 uppercase tracking-wider mb-1.5">Worker Rating (1-5)</label>
-                        <input 
-                          type="number" 
-                          min="1"
-                          max="5"
-                          step="0.1"
-                          value={inspectingWorker.rating || 5.0}
-                          onChange={(e) => setInspectingWorker({...inspectingWorker, rating: Number(e.target.value) || 5.0})}
-                          className="w-full px-2.5 py-1.5 text-xs border border-gray-200 rounded-xl font-bold text-gray-800 bg-white font-semibold"
-                        />
+                        <label className="block text-[10px] font-extrabold text-slate-600 uppercase tracking-wider mb-1">Worker Rating</label>
+                        <div className="w-full px-2.5 py-2 text-xs border border-gray-150 bg-gray-50 rounded-xl font-black text-[#2E7D32]">
+                          {inspectingWorker.rating ? `${Number(inspectingWorker.rating).toFixed(1)} ★` : 'No rating'}
+                        </div>
+                        <span className="text-[8px] text-gray-400 font-bold block mt-1">Calculated from resident reviews</span>
                       </div>
                     </div>
 

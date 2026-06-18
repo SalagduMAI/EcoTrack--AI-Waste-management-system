@@ -18,6 +18,30 @@ interface ResidentPortalProps {
   onUserUpdate?: (freshUser: any) => void;
 }
 
+const getLocalDateString = (d = new Date()) => {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const getLocalISOString = (d = new Date()) => {
+  const tzOffset = -d.getTimezoneOffset();
+  const diff = tzOffset >= 0 ? '+' : '-';
+  const pad = (num: number) => String(num).padStart(2, '0');
+  const pad3 = (num: number) => String(num).padStart(3, '0');
+  
+  return d.getFullYear() +
+    '-' + pad(d.getMonth() + 1) +
+    '-' + pad(d.getDate()) +
+    'T' + pad(d.getHours()) +
+    ':' + pad(d.getMinutes()) +
+    ':' + pad(d.getSeconds()) +
+    '.' + pad3(d.getMilliseconds()) +
+    diff + pad(Math.floor(Math.abs(tzOffset) / 60)) +
+    ':' + pad(Math.abs(tzOffset) % 60);
+};
+
 interface ChatMessage {
   id: number | string;
   sender: 'user' | 'bot';
@@ -152,7 +176,7 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
   const [specialCategory, setSpecialCategory] = useState<'Furniture' | 'E-Waste' | 'Construction' | 'Other'>('Furniture');
   const [specialDescription, setSpecialDescription] = useState('Old sofa, 3-seater');
   const [specialWeight, setSpecialWeight] = useState('45');
-  const [specialDate, setSpecialDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [specialDate, setSpecialDate] = useState(() => getLocalDateString());
   const [specialPhotoName, setSpecialPhotoName] = useState<string | null>(null);
   const [specialCardNumber, setSpecialCardNumber] = useState('4321 4567 8910 4821');
   const [specialCardExpiry, setSpecialCardExpiry] = useState('12 / 28');
@@ -352,7 +376,7 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.setAttribute('href', url);
-      link.setAttribute('download', `collection_history_A301_${new Date().toISOString().split('T')[0]}.csv`);
+      link.setAttribute('download', `collection_history_A301_${getLocalDateString()}.csv`);
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -386,7 +410,7 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.setAttribute('href', url);
-      link.setAttribute('download', `payments_history_A301_${new Date().toISOString().split('T')[0]}.csv`);
+      link.setAttribute('download', `payments_history_A301_${getLocalDateString()}.csv`);
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -627,7 +651,7 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
   const [bulkBooking, setBulkBooking] = useState({
     category: 'Electronic Waste',
     description: '',
-    pickup_date: new Date().toISOString().split('T')[0],
+    pickup_date: getLocalDateString(),
     shift: 'morning'
   });
 
@@ -638,7 +662,7 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
     job_id: ''
   });
   const [myComplaints, setMyComplaints] = useState<any[]>([]);
-  const [complaintDate, setComplaintDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [complaintDate, setComplaintDate] = useState(() => getLocalDateString());
   const [complaintTime, setComplaintTime] = useState(() => {
     const now = new Date();
     return `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
@@ -1046,7 +1070,7 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
       if (!response.ok) throw new Error(data.message || 'Server booking reject.');
 
       setMessage(`Special Pickup scheduled successfully! Invoice Reference: ${data.data.reference_code}. LKR 1500 billed to account.`);
-      setBulkBooking({ category: 'Electronic Waste', description: '', pickup_date: new Date().toISOString().split('T')[0], shift: 'morning' });
+      setBulkBooking({ category: 'Electronic Waste', description: '', pickup_date: getLocalDateString(), shift: 'morning' });
       fetchResidentProfile();
       setActiveTab('billing');
     } catch {
@@ -1058,7 +1082,7 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
       ]);
       setUnitProfile((prev: any) => ({ ...prev, unpaid_balance_lkr: prev.unpaid_balance_lkr + 1500, pending_bills_count: prev.pending_bills_count + 1 }));
       setMessage(`Special Pickup logged successfully in sandbox mode. Invoice Reference: ${mockRef}. LKR 1,500 billed.`);
-      setBulkBooking({ category: 'Electronic Waste', description: '', pickup_date: new Date().toISOString().split('T')[0], shift: 'morning' });
+      setBulkBooking({ category: 'Electronic Waste', description: '', pickup_date: getLocalDateString(), shift: 'morning' });
       setActiveTab('billing');
     } finally {
       setActionLoading(false);
@@ -1122,7 +1146,7 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
     } catch {
       // Local filter update
       setPayments(prev => 
-        prev.map(p => p.id === paymentId ? { ...p, status: 'paid', paid_at: new Date().toISOString() } : p)
+        prev.map(p => p.id === paymentId ? { ...p, status: 'paid', paid_at: getLocalISOString() } : p)
       );
       setUnitProfile((prev: any) => ({
         ...prev,
@@ -1222,7 +1246,7 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
         category: targetCategory,
         description: complaintDescription,
         status: 'open',
-        created_at: new Date().toISOString(),
+        created_at: getLocalISOString(),
         date_label: 'Today',
         date: complaintDate,
         expected_time: complaintTime
@@ -1240,7 +1264,7 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
         category: getCategoryLabel(complaintWhatHappened),
         description: complaintDescription,
         status: 'open',
-        created_at: new Date().toISOString(),
+        created_at: getLocalISOString(),
         date_label: 'Today',
         date: complaintDate,
         expected_time: complaintTime
@@ -4562,7 +4586,7 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
                               <button
                                 type="button"
                                 onClick={() => {
-                                  setComplaintDate(new Date().toISOString().split('T')[0]);
+                                  setComplaintDate(getLocalDateString());
                                   setComplaintTime(() => {
                                     const now = new Date();
                                     return `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;

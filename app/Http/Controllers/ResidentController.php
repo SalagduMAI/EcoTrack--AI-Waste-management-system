@@ -925,6 +925,15 @@ Conversational Thread History:
             'feedback' => $request->feedback,
         ]);
 
+        if ($request->worker_id) {
+            \App\Models\WorkerNotification::create([
+                'worker_id' => $request->worker_id,
+                'type' => 'rating',
+                'title' => 'New Resident Feedback',
+                'message' => "{$resident->name} rated your service {$request->rating} ★: \"" . ($request->feedback ?: 'Great job!') . "\"",
+            ]);
+        }
+
         return response()->json([
             'status' => 'success',
             'message' => "Successfully submitted {$request->rating}-star worker rating reviews.",
