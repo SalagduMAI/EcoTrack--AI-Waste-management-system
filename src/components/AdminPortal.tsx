@@ -269,6 +269,16 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
   const [complaints, setComplaints] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
 
+  useEffect(() => {
+    if (isCreateJobOpen && users.length > 0) {
+      const firstWorker = users.find(u => u.role === 'worker') || users[0];
+      setCreateJobForm(prev => ({
+        ...prev,
+        worker: String(firstWorker.id)
+      }));
+    }
+  }, [isCreateJobOpen, users]);
+
   // Derived / computed stats from actual data in the system
   const totalJobsCount = jobs.length;
   const completedJobsCount = jobs.filter(j => j.status === 'done').length;
@@ -572,7 +582,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
           name: u.name,
           rate: `${completionScore}% Completion`,
           jobs: `${wJobs.length} Jobs`,
-          rating: `${u.rating || 4.5} / 5.0 (${(u.rating || 4.5) >= 4.5 ? 'Excellent' : 'Good Standings'})`
+          rating: u.rating ? `${Number(u.rating).toFixed(1)} / 5.0 (${Number(u.rating) >= 4.5 ? 'Excellent' : 'Good Standings'})` : 'No ratings / 5.0 (N/A)'
         };
       });
 
@@ -1178,7 +1188,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
           role: u.role,
           shift: u.shift ? u.shift.charAt(0).toUpperCase() + u.shift.slice(1) : 'Morning',
           status: u.status || 'active',
-          rating: Number(u.rating) || 4.5,
+          rating: u.rating ? Number(u.rating) : null,
           nic: u.nic || 'N/A',
           assignedBlocks: u.assigned_blocks || 'All Blocks',
           avatar: u.profile_photo_path
@@ -2516,27 +2526,6 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
     }
   };
 
-  // Pre-populate unassigned blocks when Worker Onboarding modal opens
-  useEffect(() => {
-    if (isAddWorkerModalOpen && blocks) {
-      const assignedBlocksSet = new Set<string>();
-      users.forEach(u => {
-        if (u.role === 'worker' && u.assignedBlocks) {
-          u.assignedBlocks.split(',').forEach((bName: string) => {
-            assignedBlocksSet.add(bName.trim());
-          });
-        }
-      });
-      const unassigned = blocks
-        .filter(b => !assignedBlocksSet.has(b.name))
-        .map(b => b.name);
-      
-      setWorkerForm(prev => ({
-        ...prev,
-        assignedBlocks: unassigned.join(', ')
-      }));
-    }
-  }, [isAddWorkerModalOpen, blocks, users]);
 
   // Trigger monthly bill generations
   const handleGenerateMonthlyBills = async () => {
@@ -3366,7 +3355,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
         role: 'worker',
         shift: workerForm.shift,
         status: 'active',
-        rating: 5.0,
+        rating: null,
         nic: workerForm.nic || 'N/A',
         assignedBlocks: workerForm.assignedBlocks || 'All Blocks',
         avatar: workerForm.avatar || '',
@@ -6394,7 +6383,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                             className="w-full bg-[#F4F6F0]/40 border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#2E7D32]/10 focus:border-[#2E7D32] rounded-xl px-3 py-2.5 text-xs font-bold text-gray-700"
                           >
                             {users.filter(u => u.role === 'worker').map(w => (
-                              <option key={w.id} value={w.name}>{w.name}</option>
+                              <option key={w.id} value={w.id}>{w.name}</option>
                             ))}
                           </select>
                         </div>
@@ -6403,7 +6392,20 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                           <label className="block text-[10px] font-extrabold text-[#164121] uppercase tracking-wide mb-1.5">SHIFT</label>
                           <select
                             value={createJobForm.shift}
-                            onChange={(e) => setCreateJobForm({...createJobForm, shift: e.target.value})}
+                            onChange={(e) => {
+                              const selectedShift = e.target.value;
+                              let defaultTime = '06:30 AM';
+                              if (selectedShift.includes('Evening')) {
+                                defaultTime = '02:30 PM';
+                              } else if (selectedShift.includes('Night')) {
+                                defaultTime = '10:30 PM';
+                              }
+                              setCreateJobForm({
+                                ...createJobForm,
+                                shift: selectedShift,
+                                time: defaultTime
+                              });
+                            }}
                             className="w-full bg-[#F4F6F0]/40 border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#2E7D32]/10 focus:border-[#2E7D32] rounded-xl px-3 py-2.5 text-xs font-bold text-gray-700"
                           >
                             <option value="Morning 6AM-2PM">Morning 6AM-2PM</option>
@@ -6468,7 +6470,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                         disabled={actionLoading}
                         onClick={async () => {
                           setActionLoading(true);
-                          const chosenWorker = users.find(u => u.name === createJobForm.worker) || { name: createJobForm.worker };
+                          const chosenWorker = users.find(u => String(u.id) === String(createJobForm.worker)) || { name: createJobForm.worker, id: null };
                           const chosenBlock = blocks.find(b => b.name === createJobForm.block) || { name: createJobForm.block };
                           
                           try {
@@ -6483,11 +6485,20 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                             // Call API to schedule each unit sequentially/concurrently
                             await Promise.all(
                               createJobForm.units.map(async (unitStr) => {
+                                const floorNum = parseInt(createJobForm.floor.replace(/[^0-9]/g, '')) || 1;
+                                const chosenFloor = chosenBlock.floors?.find((f: any) => f.floor_number === floorNum);
+                                const availableUnits = chosenBlock.units?.[String(floorNum)] || [];
+                                const chosenUnit = availableUnits.find((u: any) => u.unit_number === unitStr);
+
                                 const payload = {
+                                  block_id: chosenBlock.id || null,
+                                  floor_id: chosenFloor?.id || null,
+                                  unit_id: chosenUnit?.id || null,
+                                  worker_id: chosenWorker.id || null,
                                   block: chosenBlock.name,
                                   floor: createJobForm.floor,
                                   unit_number: unitStr,
-                                  worker: chosenWorker.name,
+                                  worker: chosenWorker.name || '',
                                   shift: createJobForm.shift,
                                   date: createJobForm.date
                                 };
@@ -8557,8 +8568,8 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
               initials: initials,
               shift: u.shift || "Morning",
               shiftDetails: `${u.shift || "Morning"} shift • ${wJobs.length} jobs total`,
-              rating: u.rating || 4.5,
-              stars: Math.round(u.rating || 4.5),
+              rating: u.rating ? Number(u.rating) : null,
+              stars: u.rating ? Math.round(Number(u.rating)) : 0,
               trend: completionScore >= 90 ? "up" : "down",
               trendLabel: completionScore >= 90 ? "trending up" : "trending down",
               barHeights: barHeights,
@@ -8570,9 +8581,10 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
 
           // ── DYNAMIC CALCULATIONS FOR PREVIEWS ──
           const activeWorkersCount = activeWorkers.length;
-          const avgWorkerRating = activeWorkersCount > 0 
-            ? (activeWorkers.reduce((sum, u) => sum + Number(u.rating || 0), 0) / activeWorkersCount).toFixed(1)
-            : '0.0';
+          const ratedWorkers = activeWorkers.filter(w => w.rating !== null && Number(w.rating) > 0);
+          const avgWorkerRating = ratedWorkers.length > 0 
+            ? (ratedWorkers.reduce((sum, w) => sum + Number(w.rating), 0) / ratedWorkers.length).toFixed(1)
+            : 'N/A';
 
           const levyRevenue = payments.filter(p => p.status === 'paid' && (p.payment_type?.toLowerCase().includes('levy') || p.notes?.toLowerCase().includes('levy'))).reduce((sum, p) => sum + p.amount, 0);
           const pickupRevenue = payments.filter(p => p.status === 'paid' && (p.payment_type?.toLowerCase().includes('pickup') || p.notes?.toLowerCase().includes('pickup') || p.payment_type?.toLowerCase().includes('sweep') || p.notes?.toLowerCase().includes('sweep'))).reduce((sum, p) => sum + p.amount, 0);
@@ -8628,8 +8640,9 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
             ? blockStats.reduce((best, current) => current.rate > best.rate ? current : best, blockStats[0]) 
             : null;
 
-          const topWorker = performanceWorkers.length > 0 
-            ? performanceWorkers.reduce((top, w) => w.rating > top.rating ? w : top, performanceWorkers[0]) 
+          const ratedPerformanceWorkers = performanceWorkers.filter(w => w.rating !== null && Number(w.rating) > 0);
+          const topWorker = ratedPerformanceWorkers.length > 0 
+            ? ratedPerformanceWorkers.reduce((top, w) => Number(w.rating) > Number(top.rating) ? w : top, ratedPerformanceWorkers[0]) 
             : null;
 
           const activeComplaintsCount = complaints.filter(c => c.status === 'open' || c.status === 'pending').length;
@@ -12651,7 +12664,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                         role: 'worker',
                         nic: inspectingWorker.nic === 'N/A' ? '' : inspectingWorker.nic,
                         avatar: inspectingWorker.avatar,
-                        assigned_blocks: inspectingWorker.assignedBlocks === 'All Blocks' ? '' : (inspectingWorker.assignedBlocks || 'All Blocks'),
+                        assigned_blocks: inspectingWorker.assignedBlocks || 'All Blocks',
                         shift: (() => {
                           const sh = (inspectingWorker.shift || 'morning').toLowerCase();
                           if (sh.includes('morning')) return 'morning';
@@ -12746,21 +12759,134 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                         className="w-full px-3 py-2 text-xs border border-gray-200 rounded-xl font-semibold text-gray-800 bg-white outline-none"
                       >
                         <option value="Morning">Morning Shift (06:00 - 14:00)</option>
-                        <option value="Afternoon">Afternoon Shift (14:00 - 22:00)</option>
+                        <option value="Evening">Evening Shift (14:00 - 22:00)</option>
                         <option value="Night">Night Shift (22:00 - 06:00)</option>
                       </select>
                     </div>
 
-                    <div>
-                      <label className="block text-[10px] font-extrabold text-slate-600 uppercase tracking-wider mb-1">Assigned Blocks</label>
-                      <input 
-                        type="text" 
-                        required
-                        placeholder="e.g. Block A, Block B"
-                        value={inspectingWorker.assignedBlocks === 'All Blocks' ? '' : (inspectingWorker.assignedBlocks || '')}
-                        onChange={(e) => setInspectingWorker({...inspectingWorker, assignedBlocks: e.target.value})}
-                        className="w-full px-3 py-2 text-xs border border-gray-200 rounded-xl font-semibold text-gray-800 bg-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
-                      />
+                    <div className="mt-4">
+                      <label className="block text-[10px] font-extrabold text-slate-600 uppercase tracking-wider mb-2">
+                        Assigned Residential Blocks Coverage
+                      </label>
+                      <div className="space-y-3">
+                        {(() => {
+                          const selectedList = inspectingWorker.assignedBlocks && inspectingWorker.assignedBlocks !== 'All Blocks'
+                            ? inspectingWorker.assignedBlocks.split(',').map((x: string) => x.trim()).filter(Boolean)
+                            : [];
+
+                          const toggleBlock = (blockName: string) => {
+                            let updated: string[];
+                            if (selectedList.includes(blockName)) {
+                              updated = selectedList.filter((b: string) => b !== blockName);
+                            } else {
+                              updated = [...selectedList, blockName];
+                            }
+                            setInspectingWorker((prev: any) => ({
+                              ...prev,
+                              assignedBlocks: updated.length > 0 ? updated.join(', ') : 'All Blocks'
+                            }));
+                          };
+
+                          // Get all blocks covered by OTHER workers
+                          const alreadyCoveredSet = new Set<string>();
+                          users.forEach(u => {
+                            if (u.role === 'worker' && u.id !== inspectingWorker.id && u.assignedBlocks) {
+                              u.assignedBlocks.split(',').forEach((bName: string) => {
+                                if (bName.trim() !== 'All Blocks') {
+                                  alreadyCoveredSet.add(bName.trim());
+                                }
+                              });
+                            }
+                          });
+
+                          const unassignedBlocks = blocks.filter(b => !alreadyCoveredSet.has(b.name));
+                          const assignedBlocks = blocks.filter(b => alreadyCoveredSet.has(b.name));
+
+                          return (
+                            <div className="space-y-3 max-h-[160px] overflow-y-auto pr-1">
+                              {/* Unassigned Blocks */}
+                              <div className="p-2.5 bg-[#E8F5E9]/25 border border-emerald-100 rounded-xl">
+                                <span className="text-[9px] text-emerald-800 font-extrabold uppercase tracking-wide block mb-1.5 flex items-center gap-1.5">
+                                  <span className="w-1 h-1 rounded-full bg-emerald-500 animate-pulse"></span>
+                                  Unassigned Blocks (Available)
+                                </span>
+                                {unassignedBlocks.length === 0 ? (
+                                  <p className="text-[10px] text-gray-400 font-medium italic">All blocks are currently covered.</p>
+                                ) : (
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {unassignedBlocks.map(b => {
+                                      const isChecked = selectedList.includes(b.name);
+                                      return (
+                                        <button
+                                          key={b.id}
+                                          type="button"
+                                          onClick={() => toggleBlock(b.name)}
+                                          className={`px-2.5 py-1 rounded-lg text-[10.5px] font-bold transition-all cursor-pointer flex items-center gap-1 border ${
+                                            isChecked
+                                              ? 'bg-[#2E7D32] text-white border-[#2E7D32] shadow-sm'
+                                              : 'bg-white text-gray-600 border-gray-200 hover:bg-slate-50'
+                                          }`}
+                                        >
+                                          <span>{b.name}</span>
+                                          {isChecked ? <Check className="w-3 h-3 shrink-0" /> : <Plus className="w-2.5 h-2.5 text-gray-400 shrink-0" />}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Covered Blocks */}
+                              <div className="p-2.5 bg-slate-50/50 border border-gray-150 rounded-xl">
+                                <span className="text-[9px] text-slate-550 font-extrabold uppercase tracking-wide block mb-1.5 text-gray-500 flex items-center gap-1.5">
+                                  <span className="w-1 h-1 rounded-full bg-slate-300"></span>
+                                  Already Covered (Multi-Staff)
+                                </span>
+                                {assignedBlocks.length === 0 ? (
+                                  <p className="text-[10px] text-gray-400 font-medium italic">No blocks are currently covered by others.</p>
+                                ) : (
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {assignedBlocks.map(b => {
+                                      const isChecked = selectedList.includes(b.name);
+                                      
+                                      // Find worker names covering this block
+                                      const crew = users
+                                        .filter(u => u.role === 'worker' && u.id !== inspectingWorker.id && u.assignedBlocks && u.assignedBlocks.split(',').map((x: string) => x.trim()).includes(b.name))
+                                        .map(u => u.name);
+
+                                      return (
+                                        <button
+                                          key={b.id}
+                                          type="button"
+                                          onClick={() => toggleBlock(b.name)}
+                                          className={`px-2.5 py-1 rounded-lg text-[10.5px] font-bold transition-all cursor-pointer flex flex-col items-start gap-0.5 border ${
+                                            isChecked
+                                              ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                                              : 'bg-white text-gray-500 border-gray-200 hover:bg-slate-50'
+                                          }`}
+                                        >
+                                          <span className="flex items-center gap-1">
+                                            <span>{b.name}</span>
+                                            {isChecked ? <Check className="w-3 h-3 shrink-0" /> : <Plus className="w-2.5 h-2.5 text-gray-400 shrink-0" />}
+                                          </span>
+                                          {crew.length > 0 && (
+                                            <span className={`text-[7.5px] font-bold leading-none ${isChecked ? 'text-blue-100' : 'text-gray-400'}`}>
+                                              Crew: {crew.join(', ')}
+                                            </span>
+                                          )}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                      <span className="text-[9px] text-gray-400 font-bold block mt-1 mb-4 leading-normal">
+                        Selected blocks: <span className="font-mono bg-gray-100 px-1 py-0.5 rounded text-gray-750 font-extrabold">{inspectingWorker.assignedBlocks || 'All Blocks'}</span>
+                      </span>
                     </div>
 
                     <div className="grid grid-cols-2 gap-3">

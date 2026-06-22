@@ -40,7 +40,10 @@ class WorkerController extends Controller
                   });
             });
         } else {
-            $query->where('worker_id', $worker->id);
+            $query->where(function($q) use ($worker) {
+                $q->where('worker_id', $worker->id)
+                  ->orWhereNull('worker_id');
+            });
         }
 
         $tasks = $query->orderBy('status', 'asc')
@@ -449,7 +452,9 @@ class WorkerController extends Controller
                 'initials' => $initials ?: 'W',
                 'completed_jobs' => $completedCount,
                 'rating' => $avgWRating,
-                'is_current' => $w->id === $worker->id
+                'is_current' => $w->id === $worker->id,
+                'profile_photo_path' => $w->profile_photo_path,
+                'profile_photo_url' => $w->profile_photo_path ? asset('storage/' . $w->profile_photo_path) : null,
             ];
         })->sortByDesc('completed_jobs')->values();
 
@@ -623,7 +628,10 @@ class WorkerController extends Controller
                   });
             });
         } else {
-            $query->where('worker_id', $worker->id);
+            $query->where(function($q) use ($worker) {
+                $q->where('worker_id', $worker->id)
+                  ->orWhereNull('worker_id');
+            });
         }
         
         return $query->findOrFail($id);

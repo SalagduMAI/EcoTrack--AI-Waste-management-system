@@ -2433,7 +2433,9 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
                   {/* LEADERBOARD CARD */}
                   <div className="bg-white p-5 border border-gray-200/60 rounded-3xl shadow-xs space-y-3" id="leaderboard-block">
                     <div className="flex items-center justify-between pb-1 border-b border-gray-100">
-                      <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">LEADERBOARD • MAY</span>
+                      <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
+                        LEADERBOARD • {new Date().toLocaleString('en-US', { month: 'long' }).toUpperCase()}
+                      </span>
                       <Award className="w-4.5 h-4.5 text-amber-500" />
                     </div>
 
@@ -2460,10 +2462,20 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
                                 <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black ${rankColor}`}>
                                   {row.rank}
                                 </span>
-                                <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[9px] font-black ${
-                                  isCurrent ? 'bg-emerald-700 text-white' : 'bg-[#2E7D32]/10 text-[#2E7D32]'
-                                }`}>
-                                  {row.initials}
+                                <div className="w-7 h-7 rounded-full flex items-center justify-center overflow-hidden shrink-0 bg-emerald-700/10 text-emerald-800 border border-emerald-100/50">
+                                  {isCurrent ? (
+                                    (localUser?.profile_photo_url || localUser?.avatarUrl) ? (
+                                      <img src={localUser.profile_photo_url || localUser.avatarUrl} alt={row.name} className="w-full h-full object-cover" />
+                                    ) : (
+                                      <span className="text-[9px] font-black text-emerald-800 uppercase">{row.initials}</span>
+                                    )
+                                  ) : (
+                                    row.profile_photo_url ? (
+                                      <img src={row.profile_photo_url} alt={row.name} className="w-full h-full object-cover" />
+                                    ) : (
+                                      <span className="text-[9px] font-black text-emerald-800 uppercase">{row.initials}</span>
+                                    )
+                                  )}
                                 </div>
                                 <div>
                                   <p className={`text-xs leading-tight ${isCurrent ? 'font-black text-gray-900' : 'font-bold text-gray-800'}`}>

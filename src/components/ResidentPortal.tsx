@@ -709,6 +709,26 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
           setProfileUnit(dashData.data.unit_number);
           setProfileBlock(dashData.data.block_name || 'Block A');
           setProfileFloor(dashData.data.floor_number || 'None');
+
+          // Sync simulation/display mode to match database status
+          const next = dashData.data.next_pickup;
+          if (next) {
+            const todayStr = getLocalDateString();
+            const isToday = next.scheduled_date === todayStr;
+            if (isToday) {
+              if (next.status === 'in_progress') {
+                setHomeSimulationMode('active_tracker');
+              } else if (next.status === 'pending') {
+                setHomeSimulationMode('offline_pending');
+              } else if (next.status === 'done') {
+                setHomeSimulationMode('normal_caught_up');
+              }
+            } else {
+              setHomeSimulationMode('normal_caught_up');
+            }
+          } else {
+            setHomeSimulationMode('normal_caught_up');
+          }
         }
       }
       
@@ -1482,7 +1502,7 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
                     ? 'No collection scheduled today' 
                     : homeSimulationMode === 'offline_pending' 
                     ? "Today's collection" 
-                    : 'Greenfield Residencies - Block A'}
+                    : `Greenfield Residencies - ${profileBlock || 'Block A'}`}
                 </span>
                 <h1 className="text-xl md:text-2xl font-black text-[#1E4D2B] tracking-tight flex items-center gap-1.5 mt-0.5">
                   <span>{profileUnit} • {profileName.split(' ')[0]}</span>
@@ -2017,7 +2037,7 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
                             In-Progress
                           </span>
                           <h2 className="text-lg md:text-xl font-black mt-1.5 tracking-tight">{unitProfile?.next_pickup?.worker?.name?.split(' ')[0] || 'Staff'} is on Floor {profileFloor}</h2>
-                          <p className="text-xs text-emerald-100 font-medium">Estimated arrival in 8 min • 7:14 AM</p>
+                          <p className="text-xs text-emerald-100 font-medium">Estimated arrival today during {unitProfile?.next_pickup?.shift || 'morning'} shift</p>
                         </div>
                       </div>
 
@@ -2038,9 +2058,13 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
                           <Check className="w-7 h-7 text-emerald-700 stroke-[3]" />
                         </div>
                         <div>
-                          <h2 className="text-lg md:text-xl font-black text-[#1E4D2B] tracking-tight font-sans">You're all caught up!</h2>
+                          <h2 className="text-lg md:text-xl font-black text-[#1E4D2B] tracking-tight font-sans">
+                            {unitProfile?.next_pickup?.status === 'done' ? "Today's collection is complete!" : "You're all caught up!"}
+                          </h2>
                           <p className="text-xs text-gray-500 font-bold leading-relaxed mt-1">
-                            No collection scheduled for today. Your next pickup is Wednesday at 6:30 AM.
+                            {unitProfile?.next_pickup?.status === 'done'
+                              ? `Our operator ${unitProfile?.next_pickup?.worker?.name || 'Staff'} has successfully cleared your corridor level today.`
+                              : "No collection scheduled for today. Your next pickup is Wednesday at 6:30 AM."}
                           </p>
                         </div>
                       </div>
@@ -2107,7 +2131,9 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
                         if (pendingRatings.length > 0) {
                           setActiveRatingJob(pendingRatings[0]);
                         } else {
-                          setMessage('Last collection check: Sunil Kumara rated successfully today!');
+                          const workerName = unitProfile?.next_pickup?.worker?.name || 'Staff';
+                          const msgText = `No completed collection jobs found to evaluate. You can rate ${workerName}'s service once they finish a collection today.`;
+                          setMessage(msgText);
                         }
                       }}
                       className="p-4 bg-white border border-gray-200/60 rounded-2xl hover:border-[#1E4D2B]/40 hover:shadow-sm active:scale-95 transition-all text-left flex flex-col justify-between items-start h-28 cursor-pointer group"
@@ -5077,32 +5103,39 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
                               
                               {!notifRated ? (
                                 <div className="space-y-3 text-center py-1">
-                                  <p className="text-[11.5px] text-gray-500 font-bold">Select stars to rate Sunil Kumara's behavior & hygiene:</p>
-                                  <div className="flex justify-center items-center gap-2">
-                                    {[1, 2, 3, 4, 5].map((star) => (
-                                      <button
-                                        key={star}
-                                        type="button"
-                                        onClick={() => setNotifRatingStars(star)}
-                                        className="p-1 hover:scale-125 transition-transform"
-                                      >
-                                        <Star className={`w-7 h-7 ${
-                                          star <= notifRatingStars ? 'text-[#EEA956] fill-[#EEA956]' : 'text-gray-300'
-                                        }`} />
-                                      </button>
-                                    ))}
-                                  </div>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setNotifRated(true);
-                                      setMessage(`Successfully submitted ${notifRatingStars}-star rating for Sunil Kumara. Feedback logged!`);
-                                    }}
-                                    className="w-full bg-[#1E4D2B] hover:bg-[#15341D] text-white font-black py-2.5 px-4 rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 mt-2"
-                                  >
-                                    <Award className="w-3.5 h-3.5" />
-                                    <span>Confirm {notifRatingStars}-Star Resident Rating</span>
-                                  </button>
+                                  {(() => {
+                                    const workerName = unitProfile?.next_pickup?.worker?.name || 'Sunil Kumara';
+                                    return (
+                                      <>
+                                        <p className="text-[11.5px] text-gray-500 font-bold">Select stars to rate {workerName}'s behavior & hygiene:</p>
+                                        <div className="flex justify-center items-center gap-2">
+                                          {[1, 2, 3, 4, 5].map((star) => (
+                                            <button
+                                              key={star}
+                                              type="button"
+                                              onClick={() => setNotifRatingStars(star)}
+                                              className="p-1 hover:scale-125 transition-transform"
+                                            >
+                                              <Star className={`w-7 h-7 ${
+                                                star <= notifRatingStars ? 'text-[#EEA956] fill-[#EEA956]' : 'text-gray-300'
+                                              }`} />
+                                            </button>
+                                          ))}
+                                        </div>
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setNotifRated(true);
+                                            setMessage(`Successfully submitted ${notifRatingStars}-star rating for ${workerName}. Feedback logged!`);
+                                          }}
+                                          className="w-full bg-[#1E4D2B] hover:bg-[#15341D] text-white font-black py-2.5 px-4 rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 mt-2"
+                                        >
+                                          <Award className="w-3.5 h-3.5" />
+                                          <span>Confirm {notifRatingStars}-Star Resident Rating</span>
+                                        </button>
+                                      </>
+                                    );
+                                  })()}
                                 </div>
                               ) : (
                                 <div className="text-center p-3.5 bg-emerald-50/50 rounded-xl space-y-1.5">
@@ -6152,7 +6185,7 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
                 <Compass className="w-5 h-5 text-[#1E4D2B] animate-spin-slow" />
                 <div>
                   <h3 className="text-sm font-black text-[#1E4D2B]">EcoTrack LIVE GPS Map</h3>
-                  <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Sunil Kumara is actively cleaning</p>
+                  <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">{unitProfile?.next_pickup?.worker?.name || 'Staff'} is actively cleaning</p>
                 </div>
               </div>
               <button 

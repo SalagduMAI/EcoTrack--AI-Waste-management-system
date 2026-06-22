@@ -56,6 +56,65 @@ class ResidentController extends Controller
             ->orderBy('shift', 'asc')
             ->first();
 
+        // Resolve block-assigned worker as fallback matching the target shift
+        $blockName = $unit->floor->block->name ?? '';
+        $assignedWorkerModel = null;
+        if ($blockName) {
+            $targetShift = $nextJob ? $nextJob->shift : 'morning';
+
+            // 1. Try to find a worker explicitly assigned to this block AND matching target shift
+            $assignedWorkerModel = User::where('role', 'worker')
+                ->where('status', 'active')
+                ->where('shift', $targetShift)
+                ->get()
+                ->first(function ($w) use ($blockName) {
+                    $assigned = strtolower($w->assigned_blocks ?: '');
+                    if (!$assigned || $assigned === 'all blocks') {
+                        return false;
+                    }
+                    $blocks = array_map('trim', explode(',', $assigned));
+                    return in_array(strtolower($blockName), $blocks);
+                });
+
+            // 2. Fallback: Try to find a worker explicitly assigned to this block (any shift)
+            if (!$assignedWorkerModel) {
+                $assignedWorkerModel = User::where('role', 'worker')
+                    ->where('status', 'active')
+                    ->get()
+                    ->first(function ($w) use ($blockName) {
+                        $assigned = strtolower($w->assigned_blocks ?: '');
+                        if (!$assigned || $assigned === 'all blocks') {
+                            return false;
+                        }
+                        $blocks = array_map('trim', explode(',', $assigned));
+                        return in_array(strtolower($blockName), $blocks);
+                    });
+            }
+
+            // 3. Fallback: Try to find a worker assigned to "All Blocks" and matching target shift
+            if (!$assignedWorkerModel) {
+                $assignedWorkerModel = User::where('role', 'worker')
+                    ->where('status', 'active')
+                    ->where('shift', $targetShift)
+                    ->get()
+                    ->first(function ($w) {
+                        $assigned = strtolower($w->assigned_blocks ?: '');
+                        return $assigned === 'all blocks';
+                    });
+            }
+
+            // 4. Fallback to any active "All Blocks" worker
+            if (!$assignedWorkerModel) {
+                $assignedWorkerModel = User::where('role', 'worker')
+                    ->where('status', 'active')
+                    ->get()
+                    ->first(function ($w) {
+                        $assigned = strtolower($w->assigned_blocks ?: '');
+                        return $assigned === 'all blocks';
+                    });
+            }
+        }
+
         // Count pending monthly fee or bulk pickups
         $unpaidBalanceSum = Payment::where('resident_id', $resident->id)
             ->where('status', 'unpaid')
@@ -88,15 +147,19 @@ class ResidentController extends Controller
                 'qr_code_hash' => $unit->qr_code_hash,
                 'unpaid_balance_lkr' => $unpaidBalanceSum,
                 'pending_bills_count' => $pendingBillsCount,
-                'next_pickup' => $nextJob ? [
-                    'scheduled_date' => $nextJob->scheduled_date->format('Y-m-d'),
-                    'shift' => ucfirst($nextJob->shift),
-                    'status' => $nextJob->status,
-                    'worker' => $nextJob->worker ? [
+                'next_pickup' => ($nextJob || $assignedWorkerModel) ? [
+                    'scheduled_date' => $nextJob ? $nextJob->scheduled_date->format('Y-m-d') : Carbon::today()->format('Y-m-d'),
+                    'shift' => $nextJob ? ucfirst($nextJob->shift) : ucfirst($assignedWorkerModel->shift ?? 'morning'),
+                    'status' => $nextJob ? $nextJob->status : 'pending',
+                    'worker' => ($nextJob && $nextJob->worker) ? [
                         'name' => $nextJob->worker->name,
                         'phone' => $nextJob->worker->phone,
                         'photo' => $nextJob->worker->profile_photo_path ? asset('storage/' . $nextJob->worker->profile_photo_path) : null
-                    ] : null
+                    ] : ($assignedWorkerModel ? [
+                        'name' => $assignedWorkerModel->name,
+                        'phone' => $assignedWorkerModel->phone,
+                        'photo' => $assignedWorkerModel->profile_photo_path ? asset('storage/' . $assignedWorkerModel->profile_photo_path) : null
+                    ] : null)
                 ] : null,
                 'recent_pickups' => $recentJobsFinished
             ]
@@ -508,9 +571,24 @@ Conversational Thread History:
      */
     private function getGreenfieldWorkersData($resident)
     {
-        $workers = User::where('role', 'worker')->where('status', 'active')->get(['name', 'phone', 'shift']);
+        $unit = Unit::with('floor.block')->where('resident_id', $resident->id)->first();
         
-        $unit = Unit::where('resident_id', $resident->id)->first();
+        $workersQuery = User::where('role', 'worker')->where('status', 'active');
+        
+        if ($unit && $unit->floor && $unit->floor->block) {
+            $blockName = $unit->floor->block->name;
+            $workers = $workersQuery->get()->filter(function ($w) use ($blockName) {
+                $assigned = strtolower($w->assigned_blocks ?: '');
+                if (!$assigned || $assigned === 'all blocks') {
+                    return true;
+                }
+                $blocks = array_map('trim', explode(',', $assigned));
+                return in_array(strtolower($blockName), $blocks);
+            })->values();
+        } else {
+            $workers = $workersQuery->get();
+        }
+        
         $assignedWorker = null;
         if ($unit) {
             $nextJob = Job::with('worker')
@@ -530,6 +608,73 @@ Conversational Thread History:
                     'shift' => $nextJob->worker->shift,
                     'scheduled_date' => $nextJob->scheduled_date->format('Y-m-d')
                 ];
+            } else {
+                // Fallback to the block-assigned worker matching the shift of the next job
+                $blockName = $unit->floor->block->name ?? '';
+                $assignedWorkerModel = null;
+                if ($blockName) {
+                    $targetShift = $nextJob ? $nextJob->shift : 'morning';
+
+                    // 1. Try to find a worker explicitly assigned to this block AND matching target shift
+                    $assignedWorkerModel = User::where('role', 'worker')
+                        ->where('status', 'active')
+                        ->where('shift', $targetShift)
+                        ->get()
+                        ->first(function ($w) use ($blockName) {
+                            $assigned = strtolower($w->assigned_blocks ?: '');
+                            if (!$assigned || $assigned === 'all blocks') {
+                                return false;
+                            }
+                            $blocks = array_map('trim', explode(',', $assigned));
+                            return in_array(strtolower($blockName), $blocks);
+                        });
+
+                    // 2. Fallback: Try to find a worker explicitly assigned to this block (any shift)
+                    if (!$assignedWorkerModel) {
+                        $assignedWorkerModel = User::where('role', 'worker')
+                            ->where('status', 'active')
+                            ->get()
+                            ->first(function ($w) use ($blockName) {
+                                $assigned = strtolower($w->assigned_blocks ?: '');
+                                if (!$assigned || $assigned === 'all blocks') {
+                                    return false;
+                                }
+                                $blocks = array_map('trim', explode(',', $assigned));
+                                return in_array(strtolower($blockName), $blocks);
+                            });
+                    }
+
+                    // 3. Fallback: Try to find a worker assigned to "All Blocks" and matching target shift
+                    if (!$assignedWorkerModel) {
+                        $assignedWorkerModel = User::where('role', 'worker')
+                            ->where('status', 'active')
+                            ->where('shift', $targetShift)
+                            ->get()
+                            ->first(function ($w) {
+                                $assigned = strtolower($w->assigned_blocks ?: '');
+                                return $assigned === 'all blocks';
+                            });
+                    }
+
+                    // 4. Fallback to any active "All Blocks" worker
+                    if (!$assignedWorkerModel) {
+                        $assignedWorkerModel = User::where('role', 'worker')
+                            ->where('status', 'active')
+                            ->get()
+                            ->first(function ($w) {
+                                $assigned = strtolower($w->assigned_blocks ?: '');
+                                return $assigned === 'all blocks';
+                            });
+                    }
+                }
+                if ($assignedWorkerModel) {
+                    $assignedWorker = [
+                        'name' => $assignedWorkerModel->name,
+                        'phone' => $assignedWorkerModel->phone,
+                        'shift' => $assignedWorkerModel->shift,
+                        'scheduled_date' => Carbon::today()->format('Y-m-d')
+                    ];
+                }
             }
         }
 

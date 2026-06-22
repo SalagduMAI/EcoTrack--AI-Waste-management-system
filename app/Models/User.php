@@ -38,6 +38,7 @@ class User extends Authenticatable
         'emergency_contact_phone',
         'notes',
         'language',
+        'assigned_blocks',
     ];
 
     /**
