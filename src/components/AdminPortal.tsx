@@ -30,6 +30,48 @@ const getLocalDateString = (d = new Date()) => {
   return `${year}-${month}-${day}`;
 };
 
+const getShiftTime = (shift: string) => {
+  if (!shift) return '06:30 AM';
+  const s = shift.toLowerCase();
+  if (s.includes('evening')) return '02:30 PM';
+  if (s.includes('night')) return '10:30 PM';
+  return '06:30 AM';
+};
+
+const formatLocalDateOnlyString = (dateInput: any) => {
+  if (!dateInput) return '';
+  const str = typeof dateInput === 'string' ? dateInput.split('T')[0] : new Date(dateInput).toISOString().split('T')[0];
+  const parts = str.split('-');
+  if (parts.length !== 3) return str;
+  const year = parts[0];
+  const monthNum = parseInt(parts[1], 10);
+  const dayNum = parseInt(parts[2], 10);
+  const monthsList = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+  ];
+  const monthName = monthsList[monthNum - 1] || 'May';
+  return `${monthName} ${dayNum}, ${year}`;
+};
+
+const formatLocalDateTimeString = (dateTimeInput: any) => {
+  if (!dateTimeInput) return '';
+  try {
+    const d = new Date(dateTimeInput);
+    if (isNaN(d.getTime())) return String(dateTimeInput);
+    return d.toLocaleString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true
+    });
+  } catch {
+    return String(dateTimeInput);
+  }
+};
+
 export default function AdminPortal({ token, user, onLogout, onUserUpdate }: AdminPortalProps) {
   // Navigation tabs mirroring the screenshot sidebar
   const [activeTab, setActiveTab] = useState<'dashboard' | 'housing' | 'users' | 'jobs' | 'qrcodes' | 'payments' | 'complaints' | 'reports' | 'settings' | 'logout'>('dashboard');
@@ -5597,7 +5639,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
 
                           <div>
                             <span className="text-[9.5px] text-gray-400 font-extrabold uppercase tracking-wider block mb-1">SCHEDULED</span>
-                            <p className="text-[12.5px] font-bold text-gray-700">{job.scheduled_date}, {job.scheduled_time || '8:25 AM'}</p>
+                            <p className="text-[12.5px] font-bold text-gray-700">{formatLocalDateOnlyString(job.scheduled_date)}, {getShiftTime(job.shift)}</p>
                           </div>
 
                           <div>
@@ -5650,7 +5692,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                                 </div>
                                 <div>
                                   <p className="text-xs font-black text-gray-800">Job created by Amantha S.</p>
-                                  <span className="text-[10px] text-gray-400 font-bold block mt-0.5">{job.scheduled_date}, 04:12 PM</span>
+                                  <span className="text-[10px] text-gray-400 font-bold block mt-0.5">{formatLocalDateTimeString(job.created_at || job.scheduled_date)}</span>
                                 </div>
                               </div>
                             )}
@@ -6061,8 +6103,8 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                                     {/* Scheduled Date / Time */}
                                     <td className="py-4.5 px-4 text-xs font-bold text-gray-600">
                                       <div className="flex flex-col">
-                                        <span>{item.scheduled_date}</span>
-                                        <span className="text-[9.5px] text-gray-400 font-semibold">{item.scheduled_time || '08:00 AM'}</span>
+                                        <span>{formatLocalDateOnlyString(item.scheduled_date)}</span>
+                                        <span className="text-[9.5px] text-gray-400 font-semibold">{getShiftTime(item.shift)}</span>
                                       </div>
                                     </td>
 
@@ -6132,13 +6174,18 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                           const dateStr = `${cell.year}-${pMonth}-${pDay}`;
                           
                           // Count dynamic items from our real-time state index
-                          const activeJobsToday = jobs.filter(j => j.scheduled_date === dateStr);
+                          const activeJobsToday = jobs.filter(j => {
+                            if (!j.scheduled_date) return false;
+                            const jDateStr = typeof j.scheduled_date === 'string'
+                              ? j.scheduled_date.split('T')[0]
+                              : new Date(j.scheduled_date).toISOString().split('T')[0];
+                            return jDateStr === dateStr;
+                          });
                           const hasIssueToday = activeJobsToday.some(j => j.status === 'issue');
 
-                          // Fetch stable seeded / mock data
-                          const mockData = getMockDataForDay(cell.dayNum, cell.monthIdx, cell.year);
-                          const totalJobsCount = mockData.jobs + (cell.isCurrent ? activeJobsToday.length : 0);
-                          const showIssue = mockData.issue || hasIssueToday;
+                          // Display ONLY actual jobs in the system (no mock data fallback)
+                          const totalJobsCount = cell.isCurrent ? activeJobsToday.length : 0;
+                          const showIssue = cell.isCurrent ? hasIssueToday : false;
 
                           // Dynamic selector outline to highlight currently selected date
                           const isSelectedDate = selectedCalendarDate === dateStr;
@@ -9275,8 +9322,8 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                                jobs.slice(0, 5).map((job: any) => (
                                  <tr key={job.id} className="bg-white hover:bg-slate-50/50">
                                    <td className="p-3 font-bold">Sweep - Block {job.block?.name || job.unit?.floor?.block?.name || 'A'}</td>
-                                   <td className="p-3">{job.scheduled_time || '08:00 AM'}</td>
-                                   <td className="p-3">{job.status === 'done' ? (job.scheduled_time || '08:00 AM') : 'Awaiting Dispatch'}</td>
+                                   <td className="p-3">{getShiftTime(job.shift)}</td>
+                                   <td className="p-3">{job.status === 'done' ? getShiftTime(job.shift) : 'Awaiting Dispatch'}</td>
                                    <td className="p-3 text-emerald-650">{job.status === 'done' ? (job.id % 5 === 0 ? 'On Time' : `+${(job.id % 4) * 2 + 2} mins`) : 'Pending'}</td>
                                    <td className="p-3 font-black text-emerald-800">{job.status === 'done' ? (job.id % 5 === 0 ? '99.1% OTPF' : '97.5% OTPF') : 'Awaiting'}</td>
                                  </tr>

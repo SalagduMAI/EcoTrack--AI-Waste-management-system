@@ -2415,7 +2415,7 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
                         <div key={job.id} className="p-3 bg-white border border-gray-155 rounded-xl flex items-center justify-between gap-2">
                           <div className="min-w-0">
                             <span className="block font-black text-gray-900 text-[11px] truncate">Staff: {job.worker?.name || 'Sunil Kumara'}</span>
-                            <span className="text-[9px] text-gray-400 font-bold block mt-0.5">Cleared Unit Level on {job.scheduled_date}</span>
+                            <span className="text-[9px] text-gray-400 font-bold block mt-0.5">Cleared Unit Level on {job.scheduled_date ? job.scheduled_date.slice(0, 10) : ''}</span>
                           </div>
                           <button
                             onClick={() => setActiveRatingJob(job)}
