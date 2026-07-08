@@ -2,11 +2,11 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://ecotrack-backend.onrender.com/api/:path*"
+      "destination": "https://app-a60754c1-3bb4-482f-871c-efb821eb06b9.cleverapps.io/api/:path*"
     },
     {
       "source": "/storage/:path*",
-      "destination": "https://ecotrack-backend.onrender.com/storage/:path*"
+      "destination": "https://app-a60754c1-3bb4-482f-871c-efb821eb06b9.cleverapps.io/storage/:path*"
     },
     {
       "source": "/(.*)",
