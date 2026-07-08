@@ -699,10 +699,11 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
         'Accept': 'application/json'
       };
 
+      const localDate = new Date().toLocaleDateString('sv-SE');
       const [tasksRes, histRes, statsRes] = await Promise.all([
-        fetch('/api/worker/tasks', { headers }).catch(() => null),
+        fetch(`/api/worker/tasks?date=${localDate}`, { headers }).catch(() => null),
         fetch('/api/worker/history', { headers }).catch(() => null),
-        fetch('/api/worker/dashboard-stats', { headers }).catch(() => null),
+        fetch(`/api/worker/dashboard-stats?date=${localDate}`, { headers }).catch(() => null),
       ]);
 
       const tasksData = tasksRes && tasksRes.ok ? await tasksRes.json() : null;

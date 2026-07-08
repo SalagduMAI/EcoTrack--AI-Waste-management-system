@@ -22,9 +22,9 @@ class AdminController extends Controller
     /**
      * Compile master KPI statistics and real-time dashboard data streams.
      */
-    public function dashboard(): JsonResponse
+    public function dashboard(Request $request): JsonResponse
     {
-        $today = Carbon::today()->format('Y-m-d');
+        $today = $request->input('date') ?: Carbon::today()->format('Y-m-d');
 
         // Core KPIs
         $todayJobs = Job::whereDate('scheduled_date', $today)->count();

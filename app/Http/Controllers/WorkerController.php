@@ -20,7 +20,7 @@ class WorkerController extends Controller
     public function todayTasks(Request $request): JsonResponse
     {
         $worker = $request->user();
-        $todayStr = Carbon::today()->format('Y-m-d');
+        $todayStr = $request->input('date') ?: Carbon::today()->format('Y-m-d');
 
         $query = Job::with(['block', 'floor', 'unit'])
             ->whereDate('scheduled_date', $todayStr)
@@ -349,9 +349,8 @@ class WorkerController extends Controller
     {
         $worker = $request->user();
 
-        // 1. CALCULATE WORKER PERFORMANCE METRICS
-        $todayStr = Carbon::today()->format('Y-m-d');
-        $yesterdayStr = Carbon::yesterday()->format('Y-m-d');
+        $todayStr = $request->input('date') ?: Carbon::today()->format('Y-m-d');
+        $yesterdayStr = Carbon::parse($todayStr)->subDay()->format('Y-m-d');
 
         // Jobs Today
         $totalToday = Job::where('worker_id', $worker->id)->whereDate('scheduled_date', $todayStr)->count();

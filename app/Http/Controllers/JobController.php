@@ -162,6 +162,21 @@ class JobController extends Controller
             'status' => 'pending',
         ]);
 
+        // Dispatch worker notification
+        try {
+            $locationLabel = $job->unit ? $job->unit->unit_number : "Floor " . ($job->floor->floor_number ?? 'Corridor');
+            $blockName = $job->block ? $job->block->name : 'Housing Block';
+            \App\Models\WorkerNotification::create([
+                'worker_id' => $workerId,
+                'type' => 'job',
+                'title' => 'New Job Scheduled',
+                'message' => "You have been assigned a new collection task at {$locationLabel} in Block {$blockName} for " . Carbon::parse($scheduledDate)->format('M d, Y') . " (" . ucfirst($shift) . " shift).",
+                'read' => false,
+            ]);
+        } catch (\Exception $e) {
+            // Fail silently to avoid breaking job creation
+        }
+
         return response()->json([
             'status' => 'success',
             'message' => 'Collection task scheduled successfully.',
@@ -285,6 +300,23 @@ class JobController extends Controller
                     'status' => 'pending',
                 ]);
                 $createdCount++;
+            }
+        }
+
+        // Dispatch bulk worker notification
+        if ($createdCount > 0) {
+            try {
+                $block = Block::find($request->block_id);
+                $blockName = $block ? $block->name : 'Complex Block';
+                \App\Models\WorkerNotification::create([
+                    'worker_id' => $request->worker_id,
+                    'type' => 'job',
+                    'title' => 'New Bulk Jobs Scheduled',
+                    'message' => "You have been assigned {$createdCount} new collection tasks in Block {$blockName} for " . Carbon::parse($scheduledDate)->format('M d, Y') . " (" . ucfirst($request->shift) . " shift).",
+                    'read' => false,
+                ]);
+            } catch (\Exception $e) {
+                // Fail silently to avoid breaking job creation
             }
         }
 

@@ -322,9 +322,17 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
   }, [isCreateJobOpen, users]);
 
   // Derived / computed stats from actual data in the system
-  const totalJobsCount = jobs.length;
-  const completedJobsCount = jobs.filter(j => j.status === 'done').length;
-  const issuesCount = jobs.filter(j => j.status === 'issue').length + complaints.filter(c => c.status === 'open').length;
+  const getTodayLocalDateString = () => new Date().toLocaleDateString('sv-SE');
+  const todayJobs = jobs.filter(j => {
+    if (!j.scheduled_date) return false;
+    // Format both to YYYY-MM-DD for precise match
+    const jobDate = j.scheduled_date.split(' ')[0];
+    return jobDate === getTodayLocalDateString();
+  });
+
+  const totalJobsCount = todayJobs.length;
+  const completedJobsCount = todayJobs.filter(j => j.status === 'done').length;
+  const issuesCount = todayJobs.filter(j => j.status === 'issue').length + complaints.filter(c => c.status === 'open').length;
   const totalRevenue = payments.filter(p => p.status === 'paid').reduce((sum, p) => sum + p.amount, 0);
 
   const stats = {
@@ -334,10 +342,10 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
     revenueK: `LKR ${totalRevenue.toLocaleString()}`
   };
 
-  const doneCount = jobs.filter(j => j.status === 'done').length;
-  const inProgressCount = jobs.filter(j => j.status === 'in_progress').length;
-  const pendingCount = jobs.filter(j => j.status === 'pending').length;
-  const issueCount = jobs.filter(j => j.status === 'issue').length;
+  const doneCount = todayJobs.filter(j => j.status === 'done').length;
+  const inProgressCount = todayJobs.filter(j => j.status === 'in_progress').length;
+  const pendingCount = todayJobs.filter(j => j.status === 'pending').length;
+  const issueCount = todayJobs.filter(j => j.status === 'issue').length;
 
   const donePercent = totalJobsCount > 0 ? Math.round((doneCount / totalJobsCount) * 100) : 0;
   const inProgressPercent = totalJobsCount > 0 ? Math.round((inProgressCount / totalJobsCount) * 100) : 0;
@@ -1032,6 +1040,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
         'Content-Type': 'application/json'
       };
 
+      const localDate = new Date().toLocaleDateString('sv-SE');
       // Concurrent fetches, failing gracefully to local simulation
       const [jobsRes, paymentsRes, complaintsRes, blocksRes, usersRes, userRes, dashboardRes] = await Promise.all([
         fetch('/api/admin/jobs', { headers }).catch(() => null),
@@ -1040,7 +1049,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
         fetch('/api/admin/blocks', { headers }).catch(() => null),
         fetch('/api/admin/users', { headers }).catch(() => null),
         fetch('/api/user', { headers }).catch(() => null),
-        fetch('/api/admin/dashboard', { headers }).catch(() => null),
+        fetch(`/api/admin/dashboard?date=${localDate}`, { headers }).catch(() => null),
       ]);
 
       let jobsData = null;
