@@ -1209,8 +1209,8 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
         ]);
       }
 
-      let usersList: any[] = [];
       if (usersData) {
+        let usersList: any[] = [];
         if (Array.isArray(usersData.data)) {
           usersList = usersData.data;
         } else if (usersData.data && Array.isArray(usersData.data.data)) {
@@ -1218,9 +1218,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
         } else if (Array.isArray(usersData)) {
           usersList = usersData;
         }
-      }
 
-      if (usersList.length > 0) {
         // Parse and set workers list
         const parsedWorkers = usersList.filter((u: any) => u.role === 'worker').map((u: any) => ({
           id: u.id,
@@ -1237,7 +1235,6 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
             ? (u.profile_photo_path.startsWith('http') ? u.profile_photo_path : `/storage/${u.profile_photo_path}`)
             : (u.name || 'W').split(' ').map((n: string) => n[0]).join('').toUpperCase()
         }));
-        
         setUsers(parsedWorkers);
 
         // Parse and set residents list
@@ -1267,12 +1264,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
             notes: u.notes || ''
           };
         });
-
-        if (parsedResidents.length > 0) {
-          setResidents(parsedResidents);
-        }
-      } else {
-        setUsers([]);
+        setResidents(parsedResidents);
       }
 
       // ── COMPILE DYNAMIC RECENT ACTIVITIES & RED FLAGS ──
