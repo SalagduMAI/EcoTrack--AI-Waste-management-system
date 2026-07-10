@@ -32,6 +32,31 @@ class Job extends Model
         'completed_at' => 'datetime',
     ];
 
+    protected static function boot()
+    {
+        parent::boot();
+
+        static::creating(function ($job) {
+            if ($job->unit_id) {
+                $unit = Unit::with('floor')->find($job->unit_id);
+                if ($unit) {
+                    if (!$job->floor_id) {
+                        $job->floor_id = $unit->floor_id;
+                    }
+                    if (!$job->block_id && $unit->floor) {
+                        $job->block_id = $unit->floor->block_id;
+                    }
+                }
+            }
+            if ($job->floor_id && !$job->block_id) {
+                $floor = Floor::find($job->floor_id);
+                if ($floor) {
+                    $job->block_id = $floor->block_id;
+                }
+            }
+        });
+    }
+
     /**
      * Assigned waste worker.
      */

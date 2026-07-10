@@ -112,6 +112,25 @@ class JobController extends Controller
             $workerId = $worker ? $worker->id : null;
         }
 
+        // Auto-resolve floor and block from unit if they are not yet resolved
+        if ($unitId) {
+            $unit = Unit::with('floor')->find($unitId);
+            if ($unit) {
+                if (!$floorId) {
+                    $floorId = $unit->floor_id;
+                }
+                if (!$blockId && $unit->floor) {
+                    $blockId = $unit->floor->block_id;
+                }
+            }
+        }
+        if ($floorId && !$blockId) {
+            $floor = Floor::find($floorId);
+            if ($floor) {
+                $blockId = $floor->block_id;
+            }
+        }
+
         // Shift: normalize "Morning 6AM-2PM" → "morning"
         $shift = $request->shift;
         if ($shift) {

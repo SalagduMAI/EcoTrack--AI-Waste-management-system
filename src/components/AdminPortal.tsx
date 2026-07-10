@@ -245,7 +245,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
     });
 
     let csvContent = "";
-    csvContent += "Job ID,Block / Floor,Worker,Shift,Scheduled Date,Scheduled Time,Status\n";
+    csvContent += "Job ID,Block / Floor,Worker,Shift,Scheduled Date,Status\n";
 
     listToExport.forEach(job => {
       const jobId = job.id || '';
@@ -253,14 +253,13 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
       const workerName = job.worker?.name || '';
       const shift = job.shift || '';
       const scheduledDate = job.scheduled_date || '';
-      const scheduledTime = job.scheduled_time || '';
       const status = job.status || 'pending';
 
       const escapedBlockFloor = `"${blockFloor.replace(/"/g, '""')}"`;
       const escapedWorker = `"${workerName.replace(/"/g, '""')}"`;
       const escapedShift = `"${shift.replace(/"/g, '""')}"`;
 
-      csvContent += `${jobId},${escapedBlockFloor},${escapedWorker},${escapedShift},${scheduledDate},${scheduledTime},${status}\n`;
+      csvContent += `${jobId},${escapedBlockFloor},${escapedWorker},${escapedShift},${scheduledDate},${status}\n`;
     });
 
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -287,17 +286,6 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
       const month = String(now.getMonth() + 1).padStart(2, '0');
       const day = String(now.getDate()).padStart(2, '0');
       return `${year}-${month}-${day}`;
-    })(),
-    time: (() => {
-      const now = new Date();
-      let hours = now.getHours();
-      const minutes = now.getMinutes();
-      const ampm = hours >= 12 ? 'PM' : 'AM';
-      hours = hours % 12;
-      hours = hours ? hours : 12;
-      const minutesStr = minutes < 10 ? '0' + minutes : minutes;
-      const hoursStr = hours < 10 ? '0' + hours : hours;
-      return `${hoursStr}:${minutesStr} ${ampm}`;
     })(),
     repeatWeekly: true,
   });
@@ -5640,12 +5628,12 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
 
                           <div>
                             <span className="text-[9.5px] text-gray-400 font-extrabold uppercase tracking-wider block mb-1">SCHEDULED</span>
-                            <p className="text-[12.5px] font-bold text-gray-700">{formatLocalDateOnlyString(job.scheduled_date)}, {getShiftTime(job.shift)}</p>
+                            <p className="text-[12.5px] font-bold text-gray-700">{formatLocalDateOnlyString(job.scheduled_date)}</p>
                           </div>
 
                           <div>
                             <span className="text-[9.5px] text-gray-400 font-extrabold uppercase tracking-wider block mb-1">SHIFT</span>
-                            <p className="text-sm font-bold text-gray-600">{job.shift || 'Morning 6-2'}</p>
+                            <p className="text-sm font-bold text-gray-600">{job.shift ? job.shift.charAt(0).toUpperCase() + job.shift.slice(1) : 'Morning'}</p>
                           </div>
 
                           <div>
@@ -6105,7 +6093,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                                     <td className="py-4.5 px-4 text-xs font-bold text-gray-600">
                                       <div className="flex flex-col">
                                         <span>{formatLocalDateOnlyString(item.scheduled_date)}</span>
-                                        <span className="text-[9.5px] text-gray-400 font-semibold">{getShiftTime(item.shift)}</span>
+                                        <span className="text-[9.5px] text-gray-400 font-semibold">{item.shift ? item.shift.charAt(0).toUpperCase() + item.shift.slice(1) : ''} Shift</span>
                                       </div>
                                     </td>
 
@@ -6441,17 +6429,9 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                           <select
                             value={createJobForm.shift}
                             onChange={(e) => {
-                              const selectedShift = e.target.value;
-                              let defaultTime = '06:30 AM';
-                              if (selectedShift.includes('Evening')) {
-                                defaultTime = '02:30 PM';
-                              } else if (selectedShift.includes('Night')) {
-                                defaultTime = '10:30 PM';
-                              }
                               setCreateJobForm({
                                 ...createJobForm,
-                                shift: selectedShift,
-                                time: defaultTime
+                                shift: e.target.value
                               });
                             }}
                             className="w-full bg-[#F4F6F0]/40 border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#2E7D32]/10 focus:border-[#2E7D32] rounded-xl px-3 py-2.5 text-xs font-bold text-gray-700"
@@ -6463,28 +6443,15 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                         </div>
                       </div>
 
-                      {/* Date & Time */}
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-[10px] font-extrabold text-[#164121] uppercase tracking-wide mb-1.5">DATE</label>
-                          <input
-                            type="date"
-                            value={createJobForm.date}
-                            onChange={(e) => setCreateJobForm({...createJobForm, date: e.target.value})}
-                            className="w-full bg-[#F4F6F0]/40 border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#2E7D32]/10 focus:border-[#2E7D32] rounded-xl px-3 py-2 text-xs font-bold text-gray-700"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-[10px] font-extrabold text-[#164121] uppercase tracking-wide mb-1.5">TIME</label>
-                          <input
-                            type="text"
-                            placeholder="e.g. 06:30 AM"
-                            value={createJobForm.time}
-                            onChange={(e) => setCreateJobForm({...createJobForm, time: e.target.value})}
-                            className="w-full bg-[#F4F6F0]/40 border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#2E7D32]/10 focus:border-[#2E7D32] rounded-xl px-3 py-2 text-xs font-bold text-gray-700"
-                          />
-                        </div>
+                      {/* Date */}
+                      <div>
+                        <label className="block text-[10px] font-extrabold text-[#164121] uppercase tracking-wide mb-1.5">DATE</label>
+                        <input
+                          type="date"
+                          value={createJobForm.date}
+                          onChange={(e) => setCreateJobForm({...createJobForm, date: e.target.value})}
+                          className="w-full bg-[#F4F6F0]/40 border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#2E7D32]/10 focus:border-[#2E7D32] rounded-xl px-3 py-2 text-xs font-bold text-gray-700"
+                        />
                       </div>
 
                       {/* Special Banner Repeat Badge */}
@@ -9323,8 +9290,8 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                                jobs.slice(0, 5).map((job: any) => (
                                  <tr key={job.id} className="bg-white hover:bg-slate-50/50">
                                    <td className="p-3 font-bold">Sweep - Block {job.block?.name || job.unit?.floor?.block?.name || 'A'}</td>
-                                   <td className="p-3">{getShiftTime(job.shift)}</td>
-                                   <td className="p-3">{job.status === 'done' ? getShiftTime(job.shift) : 'Awaiting Dispatch'}</td>
+                                   <td className="p-3">{job.shift ? job.shift.charAt(0).toUpperCase() + job.shift.slice(1) : 'Morning'}</td>
+                                   <td className="p-3">{job.status === 'done' ? (job.shift ? job.shift.charAt(0).toUpperCase() + job.shift.slice(1) : 'Morning') : 'Awaiting Dispatch'}</td>
                                    <td className="p-3 text-emerald-650">{job.status === 'done' ? (job.id % 5 === 0 ? 'On Time' : `+${(job.id % 4) * 2 + 2} mins`) : 'Pending'}</td>
                                    <td className="p-3 font-black text-emerald-800">{job.status === 'done' ? (job.id % 5 === 0 ? '99.1% OTPF' : '97.5% OTPF') : 'Awaiting'}</td>
                                  </tr>

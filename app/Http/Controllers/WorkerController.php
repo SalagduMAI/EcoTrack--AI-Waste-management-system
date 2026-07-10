@@ -23,8 +23,7 @@ class WorkerController extends Controller
         $todayStr = $request->input('date') ?: Carbon::today()->format('Y-m-d');
 
         $query = Job::with(['block', 'floor', 'unit'])
-            ->whereDate('scheduled_date', $todayStr)
-            ->where('shift', $worker->shift ?? 'morning');
+            ->whereDate('scheduled_date', $todayStr);
 
         // Filter by assigned blocks or explicit worker assignment
         $assignedBlocksStr = $worker->assigned_blocks ?: '';
@@ -32,8 +31,9 @@ class WorkerController extends Controller
             $blocksList = array_map('trim', explode(',', $assignedBlocksStr));
             $query->where(function($q) use ($worker, $blocksList) {
                 $q->where('worker_id', $worker->id)
-                  ->orWhere(function($sub) use ($blocksList) {
+                  ->orWhere(function($sub) use ($worker, $blocksList) {
                       $sub->whereNull('worker_id')
+                          ->where('shift', $worker->shift ?? 'morning')
                           ->whereHas('block', function($blockQ) use ($blocksList) {
                               $blockQ->whereIn('name', $blocksList);
                           });
@@ -42,7 +42,10 @@ class WorkerController extends Controller
         } else {
             $query->where(function($q) use ($worker) {
                 $q->where('worker_id', $worker->id)
-                  ->orWhereNull('worker_id');
+                  ->orWhere(function($sub) use ($worker) {
+                      $sub->whereNull('worker_id')
+                          ->where('shift', $worker->shift ?? 'morning');
+                  });
             });
         }
 

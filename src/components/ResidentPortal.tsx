@@ -801,6 +801,138 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
         setHistoryItems([]);
       }
 
+      // Dynamically compile notifications from jobs, payments, and complaints
+      const readNotifIds = JSON.parse(localStorage.getItem('ecotrack_read_notif_ids') || '[]');
+      const dismissedNotifIds = JSON.parse(localStorage.getItem('ecotrack_dismissed_notif_ids') || '[]');
+      const compiledNotifs: any[] = [];
+
+      // 1. Jobs from timelineData
+      if (timelineData?.status === 'success') {
+        const liveJobs = timelineData.data || [];
+        liveJobs.forEach((job: any) => {
+          let id = '';
+          let title = '';
+          let message = '';
+          let category: 'collection' | 'payment' | 'announcement' | 'rating' = 'collection';
+          let time = '';
+
+          const shiftLabel = job.shift ? (job.shift.charAt(0).toUpperCase() + job.shift.slice(1)) : 'Morning';
+          const dateStr = job.scheduled_date ? job.scheduled_date.slice(0, 10) : '';
+
+          if (job.status === 'pending') {
+            id = `notif-job-${job.id}-pending`;
+            title = 'Waste Collection Scheduled';
+            message = `A waste collection job has been scheduled for your unit on ${dateStr} during the ${shiftLabel} Shift.`;
+            category = 'collection';
+            time = `Scheduled for ${dateStr}`;
+          } else if (job.status === 'done') {
+            id = `notif-job-${job.id}-done`;
+            title = 'Waste Collection Completed ✓';
+            message = `Waste collection for your unit was completed by worker ${job.worker ? job.worker.name : 'assigned worker'}. Please rate your experience.`;
+            category = 'rating';
+            time = 'Completed';
+          } else if (job.status === 'missed') {
+            id = `notif-job-${job.id}-missed`;
+            title = 'Collection Missed ⚠';
+            message = `Greenfield team recorded a missed collection session for your unit on ${dateStr}. You can report a grievance.`;
+            category = 'collection';
+            time = 'Missed';
+          }
+
+          if (id && !dismissedNotifIds.includes(id)) {
+            compiledNotifs.push({
+              id,
+              title,
+              message,
+              category,
+              time,
+              read: readNotifIds.includes(id)
+            });
+          }
+        });
+      }
+
+      // 2. Payments
+      if (payData?.status === 'success') {
+        const livePayments = payData.data || [];
+        livePayments.forEach((pay: any) => {
+          let id = '';
+          let title = '';
+          let message = '';
+          let category: 'collection' | 'payment' | 'announcement' | 'rating' = 'payment';
+          let time = '';
+
+          if (pay.status === 'pending') {
+            id = `notif-pay-${pay.id}-pending`;
+            title = 'Outstanding Invoice Alert';
+            message = `Your monthly waste disposal levy of LKR ${pay.amount.toLocaleString()} is pending. Please settle it.`;
+            category = 'payment';
+            time = 'Pending';
+          } else if (pay.status === 'paid') {
+            id = `notif-pay-${pay.id}-paid`;
+            title = 'Payment Reconciled ✓';
+            message = `Thank you! Your payment of LKR ${pay.amount.toLocaleString()} has been successfully processed.`;
+            category = 'payment';
+            time = 'Paid';
+          }
+
+          if (id && !dismissedNotifIds.includes(id)) {
+            compiledNotifs.push({
+              id,
+              title,
+              message,
+              category,
+              time,
+              read: readNotifIds.includes(id)
+            });
+          }
+        });
+      }
+
+      // 3. Complaints
+      if (compData?.status === 'success') {
+        const liveComplaints = compData.data || [];
+        liveComplaints.forEach((comp: any) => {
+          let id = '';
+          let title = '';
+          let message = '';
+          let category: 'collection' | 'payment' | 'announcement' | 'rating' = 'announcement';
+          let time = '';
+
+          if (comp.status === 'resolved') {
+            id = `notif-comp-${comp.id}-resolved`;
+            title = 'Grievance Resolved ✓';
+            message = `Your complaint about "${comp.title || comp.description}" has been marked as resolved by the supervisor.`;
+            category = 'announcement';
+            time = 'Resolved';
+          }
+
+          if (id && !dismissedNotifIds.includes(id)) {
+            compiledNotifs.push({
+              id,
+              title,
+              message,
+              category,
+              time,
+              read: readNotifIds.includes(id)
+            });
+          }
+        });
+      }
+
+      // Also merge any local chat-based tickets/notifications
+      setNotifications(prev => {
+        const chatNotifs = prev.filter(n => n.id.startsWith('notif-esc-') && !dismissedNotifIds.includes(n.id));
+        const finalNotifs = [...compiledNotifs, ...chatNotifs];
+        // Deduplicate finalNotifs by ID
+        const seen = new Set();
+        return finalNotifs.filter(n => {
+          if (seen.has(n.id)) return false;
+          seen.add(n.id);
+          return true;
+        });
+      });
+
     } catch (err) {
       console.error(err);
     } finally {
@@ -858,6 +990,46 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
 
   const yoyTrendPercent = paidPayments.length > 0 ? "8%" : "0%";
 
+  const markNotifAsRead = (id: string) => {
+    const readIds = JSON.parse(localStorage.getItem('ecotrack_read_notif_ids') || '[]');
+    if (!readIds.includes(id)) {
+      readIds.push(id);
+      localStorage.setItem('ecotrack_read_notif_ids', JSON.stringify(readIds));
+    }
+    setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+  };
+
+  const markAllNotifsAsRead = () => {
+    const readIds = JSON.parse(localStorage.getItem('ecotrack_read_notif_ids') || '[]');
+    notifications.forEach(n => {
+      if (!readIds.includes(n.id)) {
+        readIds.push(n.id);
+      }
+    });
+    localStorage.setItem('ecotrack_read_notif_ids', JSON.stringify(readIds));
+    setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+  };
+
+  const dismissNotif = (id: string) => {
+    const dismissedIds = JSON.parse(localStorage.getItem('ecotrack_dismissed_notif_ids') || '[]');
+    if (!dismissedIds.includes(id)) {
+      dismissedIds.push(id);
+      localStorage.setItem('ecotrack_dismissed_notif_ids', JSON.stringify(dismissedIds));
+    }
+    setNotifications(prev => prev.filter(n => n.id !== id));
+  };
+
+  const clearAllNotifs = () => {
+    const dismissedIds = JSON.parse(localStorage.getItem('ecotrack_dismissed_notif_ids') || '[]');
+    notifications.forEach(n => {
+      if (!dismissedIds.includes(n.id)) {
+        dismissedIds.push(n.id);
+      }
+    });
+    localStorage.setItem('ecotrack_dismissed_notif_ids', JSON.stringify(dismissedIds));
+    setNotifications([]);
+  };
+
   const getFormattedNextPickupDate = () => {
     if (!unitProfile || !unitProfile.next_pickup || !unitProfile.next_pickup.scheduled_date) {
       return 'No Scheduled Pickups';
@@ -881,7 +1053,7 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
     }
     const shift = unitProfile.next_pickup.shift;
     if (!shift || shift === 'None') return 'None scheduled';
-    return shift === 'Morning' ? '6:30 AM' : '2:30 PM';
+    return (shift.charAt(0).toUpperCase() + shift.slice(1).toLowerCase()) + ' Shift';
   };
 
   // Sync current active recent conversation's messages
@@ -1539,7 +1711,7 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
               <button
                 type="button"
                 onClick={() => {
-                  setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+                  markAllNotifsAsRead();
                   setMessage("All notifications marked as read.");
                 }}
                 className="py-1.5 sm:py-2 px-4 rounded-full border border-[#1E4D2B] text-[#1E4D2B] bg-white hover:bg-[#F4F8F5] active:scale-95 text-xs font-extrabold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs select-none shrink-0"
@@ -1612,7 +1784,7 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
-                            setNotifications(notifications.map(n => ({ ...n, read: true })));
+                            markAllNotifsAsRead();
                             setMessage("All notifications marked as read.");
                           }}
                           className="text-[11px] text-emerald-700 hover:text-[#12301b] font-black transition-all cursor-pointer"
@@ -1662,7 +1834,7 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
                               key={notif.id}
                               onClick={() => {
                                 // Mark single as read
-                                setNotifications(notifications.map(n => n.id === notif.id ? { ...n, read: true } : n));
+                                markNotifAsRead(notif.id);
                                 setActiveTab('notifications');
                                 setIsNotifPopupOpen(false);
                               }}
@@ -1697,7 +1869,7 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
                                   type="button"
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    setNotifications(notifications.filter(n => n.id !== notif.id));
+                                    dismissNotif(notif.id);
                                   }}
                                   className="text-gray-300 hover:text-gray-500 p-1 hover:bg-gray-100 rounded-md transition-colors cursor-pointer"
                                   title="Dismiss notification"
@@ -1720,7 +1892,7 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
-                            setNotifications([]);
+                            clearAllNotifs();
                             setMessage("All notifications removed from dossier logs.");
                           }}
                           className="text-[10px] text-red-600 hover:text-red-800 font-black cursor-pointer font-sans"
@@ -1953,7 +2125,7 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
                     }`}
                   >
                     <span className="w-2 h-2 rounded-full bg-blue-300 animate-pulse"></span>
-                    <span>Sunil actively cleaning (Live GPS Tracker)</span>
+                    <span>{unitProfile?.next_pickup?.worker?.name?.split(' ')[0] || 'Staff'} actively cleaning (Live GPS Tracker)</span>
                   </button>
 
                   <button
@@ -2181,7 +2353,7 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
                   <div className="bg-white p-6 border border-gray-200/60 rounded-3xl shadow-xs space-y-4" id="monthly-metrics-and-graph">
                     <div className="flex justify-between items-center pb-2 border-b border-gray-100 text-left">
                       <div>
-                        <span className="text-[9px] font-bold text-gray-400 uppercase tracking-widest block font-mono">May 2026</span>
+                        <span className="text-[9px] font-bold text-gray-400 uppercase tracking-widest block font-mono">{new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</span>
                         <h3 className="text-base font-black text-[#1E4D2B]">This month's impact</h3>
                       </div>
                     </div>
@@ -4818,7 +4990,7 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
                                 key={n.id} 
                                 onClick={() => {
                                   if (isUnread) {
-                                    setNotifications(prev => prev.map(item => item.id === n.id ? { ...item, read: true } : item));
+                                    markNotifAsRead(n.id);
                                   }
                                   setSelectedNotifDetail(n);
                                   setNotifRatingStars(5);

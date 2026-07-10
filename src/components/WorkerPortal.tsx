@@ -803,6 +803,14 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
   // Fetch live weather data from open-meteo
   useEffect(() => {
     const fetchWeather = async () => {
+      const cached = localStorage.getItem('ecotrack_weather_cache');
+      const cachedTime = localStorage.getItem('ecotrack_weather_cache_time');
+      const nowMs = Date.now();
+      if (cached && cachedTime && (nowMs - parseInt(cachedTime, 10) < 600000)) { // 10 mins cache
+        setWeather(JSON.parse(cached));
+        return;
+      }
+
       try {
         const response = await fetch('https://api.open-meteo.com/v1/forecast?latitude=6.9271&longitude=79.8612&current=temperature_2m,weather_code,wind_speed_10m');
         if (response.ok) {
@@ -823,11 +831,15 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
             else if (code >= 95 && code <= 99) description = 'Thunderstorm';
             else description = 'Cloudy';
 
-            setWeather({
+            const weatherData = {
               temp,
               description,
               wind: `Wind ${wind} km/h`
-            });
+            };
+
+            setWeather(weatherData);
+            localStorage.setItem('ecotrack_weather_cache', JSON.stringify(weatherData));
+            localStorage.setItem('ecotrack_weather_cache_time', nowMs.toString());
           }
         }
       } catch (err) {
