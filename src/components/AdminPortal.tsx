@@ -6557,7 +6557,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                                 if (res.ok) {
                                   successCount++;
                                 } else if (res.status === 401) {
-                                  alert("Your session has expired due to the database reset. Please log out and log back in to sync with the database.");
+                                  alert("Your session has expired. Please log out and log back in to continue.");
                                   throw new Error("Session expired");
                                 } else {
                                   const errData = await res.json().catch(() => null);
