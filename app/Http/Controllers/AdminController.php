@@ -26,10 +26,17 @@ class AdminController extends Controller
     {
         $today = $request->input('date') ?: Carbon::today()->format('Y-m-d');
 
-        // Core KPIs
-        $todayJobs = Job::whereDate('scheduled_date', $today)->count();
-        $completedToday = Job::whereDate('scheduled_date', $today)->where('status', 'done')->count();
-        $issuesToday = Job::whereDate('scheduled_date', $today)->where('status', 'issue')->count();
+        // Get status counts for today in ONE query
+        $todayStatusCounts = Job::whereDate('scheduled_date', $today)
+            ->selectRaw('status, COUNT(*) as count')
+            ->groupBy('status')
+            ->pluck('count', 'status');
+
+        $completedToday = $todayStatusCounts->get('done', 0);
+        $inProgressToday = $todayStatusCounts->get('in_progress', 0);
+        $pendingToday = $todayStatusCounts->get('pending', 0);
+        $issuesToday = $todayStatusCounts->get('issue', 0);
+        $todayJobs = $completedToday + $inProgressToday + $pendingToday + $issuesToday;
 
         $activeResidentsCount = User::where('role', 'resident')->where('status', 'active')->count();
 
@@ -39,29 +46,43 @@ class AdminController extends Controller
             ->where('status', 'paid')
             ->sum('amount');
 
-        // Jobs per day (last 7 days)
+        // Jobs per day (last 7 days) in ONE query
+        $sevenDaysAgo = Carbon::today()->subDays(6)->format('Y-m-d');
+        $jobsGrouped = Job::whereDate('scheduled_date', '>=', $sevenDaysAgo)
+            ->whereDate('scheduled_date', '<=', Carbon::today()->format('Y-m-d'))
+            ->selectRaw('scheduled_date, status, COUNT(*) as count')
+            ->groupBy('scheduled_date', 'status')
+            ->get()
+            ->groupBy(function($item) {
+                // Ensure date format matches 'Y-m-d' string representation
+                return $item->scheduled_date instanceof \DateTime 
+                    ? $item->scheduled_date->format('Y-m-d') 
+                    : (string) $item->scheduled_date;
+            });
+
         $jobsPerDay = [];
         for ($i = 6; $i >= 0; $i--) {
             $date = Carbon::today()->subDays($i)->format('Y-m-d');
             $dayName = Carbon::today()->subDays($i)->format('D');
             
-            $jobsMatched = Job::whereDate('scheduled_date', $date)->count();
-            $jobsCompleted = Job::whereDate('scheduled_date', $date)->where('status', 'done')->count();
+            $dayGroups = $jobsGrouped->get($date, collect());
+            $totalMatched = $dayGroups->sum('count');
+            $completedMatched = $dayGroups->where('status', 'done')->sum('count');
 
             $jobsPerDay[] = [
                 'day' => $dayName,
                 'date' => $date,
-                'total' => $jobsMatched,
-                'completed' => $jobsCompleted,
+                'total' => $totalMatched,
+                'completed' => $completedMatched,
             ];
         }
 
         // Status breakdown today
         $statusBreakdown = [
-            'done' => Job::whereDate('scheduled_date', $today)->where('status', 'done')->count(),
-            'in_progress' => Job::whereDate('scheduled_date', $today)->where('status', 'in_progress')->count(),
-            'pending' => Job::whereDate('scheduled_date', $today)->where('status', 'pending')->count(),
-            'issue' => Job::whereDate('scheduled_date', $today)->where('status', 'issue')->count(),
+            'done' => $completedToday,
+            'in_progress' => $inProgressToday,
+            'pending' => $pendingToday,
+            'issue' => $issuesToday,
         ];
 
         // Recent activity feed compiled chronologically
