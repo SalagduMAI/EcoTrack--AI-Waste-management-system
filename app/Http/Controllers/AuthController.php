@@ -6,6 +6,7 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Http\JsonResponse;
 
@@ -257,18 +258,30 @@ class AuthController extends Controller
             'password' => Hash::make($tempPassword)
         ]);
 
-        // Simulating SMS Dispatch
+        // Try to send the temporary password via Laravel Mailer
+        $mailSent = false;
+        try {
+            Mail::raw("EcoTrack Security Alert: Your temporary security credentials are: {$tempPassword}.\n\nPlease use this temporary password to login and reset your password immediately.", function ($message) use ($user) {
+                $message->to($user->email)
+                        ->subject('EcoTrack Password Reset Request');
+            });
+            $mailSent = true;
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::error('Password reset mail failure: ' . $e->getMessage());
+        }
+
+        // Mask phone number for privacy display
         $phoneNum = $user->phone ?? '+94 77 000 1122';
         $maskedPhone = substr($phoneNum, 0, 3) . '***' . substr($phoneNum, -4);
 
         return response()->json([
             'status' => 'success',
-            'message' => 'A temporary password has been successfully generated and dispatched via SMS.',
+            'message' => 'A temporary password has been successfully generated and sent to your registered email address.',
             'data' => [
+                'email' => $user->email,
                 'phone' => $phoneNum,
                 'masked_phone' => $maskedPhone,
-                'temp_password' => $tempPassword,
-                'sms_text' => "EcoTrack Security Alert: Your temporary security credentials are: {$tempPassword}. Please use this token to login and reset your password immediately."
+                'mail_sent' => $mailSent
             ]
         ], 200);
     }

@@ -138,18 +138,21 @@ export default function Login({ onLoginSuccess }: LoginProps) {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.message || 'No account found matching this email address.');
+        setResetError(data.message || 'No account found matching this email address.');
+        setResetLoading(false);
+        return;
       }
 
       setResetSuccessData(data.data);
     } catch (err: any) {
       console.error('Password reset error:', err);
-      // Fallback local simulation for offline presentation flow
+      // Fallback local simulation for offline presentation flow ONLY when backend is completely offline
       const nameParts = forgotEmail.split('@')[0];
       const displayName = nameParts ? nameParts.charAt(0).toUpperCase() + nameParts.slice(1) : 'User';
       const fakeTempPass = 'TEMP-' + Math.floor(100000 + Math.random() * 900000);
 
       setResetSuccessData({
+        email: forgotEmail,
         phone: '+94 77 000 1122',
         masked_phone: '+94 77 *** 1122',
         temp_password: fakeTempPass,
@@ -551,78 +554,116 @@ export default function Login({ onLoginSuccess }: LoginProps) {
                   </div>
                 </form>
               ) : (
-                /* STATE 2: PREMIUM SMS DISPATCH SIMULATOR */
+                /* STATE 2: PREMIUM SMS DISPATCH SIMULATOR / SECURE EMAIL PREVIEW */
                 <div className="space-y-6 animate-in fade-in duration-200">
                   <div className="space-y-2">
                     <div className="w-12 h-12 bg-emerald-100 rounded-2xl flex items-center justify-center border border-emerald-500/10 text-emerald-800">
                       <Check className="w-6 h-6 stroke-[2.8]" />
                     </div>
-                    <h3 className="text-xl font-black text-emerald-950 tracking-tight">Temporary Password Sent!</h3>
+                    <h3 className="text-xl font-black text-emerald-950 tracking-tight">
+                      {resetSuccessData.temp_password ? "Temporary Password Sent!" : "Temporary Password Sent!"}
+                    </h3>
                     <p className="text-xs text-gray-500 font-medium leading-relaxed">
-                      We found a matching account. A temporary security code has been generated and dispatched via SMS.
+                      {resetSuccessData.temp_password 
+                        ? "We found a matching account. A temporary security code has been generated and dispatched via SMS." 
+                        : "We found a matching account. A secure temporary login password has been generated and dispatched."}
                     </p>
                   </div>
 
-                  {/* Masked phone and alert */}
-                  <div className="p-3.5 bg-emerald-50 border border-emerald-100 rounded-2xl flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-xl bg-white border border-emerald-100 text-[#2E7D32] flex items-center justify-center font-extrabold text-sm shadow-2xs">
-                      💬
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-gray-400 font-extrabold uppercase tracking-wide leading-none block">RECIPIENT NUMBER</span>
-                      <span className="text-xs text-[#2E7D32] font-black mt-1 block leading-none">{resetSuccessData.masked_phone}</span>
-                    </div>
-                  </div>
+                  {resetSuccessData.temp_password ? (
+                    <>
+                      {/* Masked phone and alert */}
+                      <div className="p-3.5 bg-emerald-50 border border-emerald-100 rounded-2xl flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-xl bg-white border border-emerald-100 text-[#2E7D32] flex items-center justify-center font-extrabold text-sm shadow-2xs">
+                          💬
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-gray-400 font-extrabold uppercase tracking-wide leading-none block">RECIPIENT NUMBER</span>
+                          <span className="text-xs text-[#2E7D32] font-black mt-1 block leading-none">{resetSuccessData.masked_phone}</span>
+                        </div>
+                      </div>
 
-                  {/* Beautiful Simulated Smartphone SMS message bubble */}
-                  <div className="space-y-1.5">
-                    <span className="block text-[10px] font-extrabold text-[#164121] uppercase tracking-wider">SMS TRANSMISSION PREVIEW</span>
-                    <div className="bg-[#FAFBF9] border border-gray-150 rounded-2xl p-4 shadow-2xs relative">
-                      <div className="absolute top-2.5 left-3 text-[9px] font-extrabold text-emerald-600/70 tracking-widest uppercase">ECOTRACK SECURE SMS</div>
-                      <p className="text-xs text-gray-700 leading-relaxed font-bold mt-4">
-                        {resetSuccessData.sms_text}
-                      </p>
-                    </div>
-                  </div>
+                      {/* Beautiful Simulated Smartphone SMS message bubble */}
+                      <div className="space-y-1.5">
+                        <span className="block text-[10px] font-extrabold text-[#164121] uppercase tracking-wider">SMS TRANSMISSION PREVIEW</span>
+                        <div className="bg-[#FAFBF9] border border-gray-150 rounded-2xl p-4 shadow-2xs relative">
+                          <div className="absolute top-2.5 left-3 text-[9px] font-extrabold text-emerald-600/70 tracking-widest uppercase">ECOTRACK SECURE SMS</div>
+                          <p className="text-xs text-gray-700 leading-relaxed font-bold mt-4">
+                            {resetSuccessData.sms_text}
+                          </p>
+                        </div>
+                      </div>
 
-                  {/* Action and Autofill buttons */}
-                  <div className="space-y-3">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        // Copy to clipboard
-                        navigator.clipboard.writeText(resetSuccessData.temp_password);
-                        setIsCopied(true);
+                      {/* Action and Autofill buttons */}
+                      <div className="space-y-3">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            // Copy to clipboard
+                            navigator.clipboard.writeText(resetSuccessData.temp_password);
+                            setIsCopied(true);
 
-                        // Autofill login inputs instantly for elite UX
-                        setEmail(forgotEmail);
-                        setPassword(resetSuccessData.temp_password);
+                            // Autofill login inputs instantly for elite UX
+                            setEmail(forgotEmail);
+                            setPassword(resetSuccessData.temp_password);
 
-                        setTimeout(() => setIsCopied(false), 2000);
-                      }}
-                      className="w-full py-3.5 bg-[#2E7D32] hover:bg-[#1E562F] text-white font-extrabold text-xs rounded-xl transition-all cursor-pointer flex items-center justify-center gap-2 shadow-md"
-                    >
-                      {isCopied ? (
-                        <>
-                          <Check className="w-4 h-4 stroke-[2.8]" />
-                          <span>Credentials Copied &amp; Loaded!</span>
-                        </>
-                      ) : (
-                        <>
-                          <ClipboardList className="w-4 h-4" />
-                          <span>Copy &amp; Autofill login screen</span>
-                        </>
-                      )}
-                    </button>
+                            setTimeout(() => setIsCopied(false), 2000);
+                          }}
+                          className="w-full py-3.5 bg-[#2E7D32] hover:bg-[#1E562F] text-white font-extrabold text-xs rounded-xl transition-all cursor-pointer flex items-center justify-center gap-2 shadow-md"
+                        >
+                          {isCopied ? (
+                            <>
+                              <Check className="w-4 h-4 stroke-[2.8]" />
+                              <span>Credentials Copied &amp; Loaded!</span>
+                            </>
+                          ) : (
+                            <>
+                              <ClipboardList className="w-4 h-4" />
+                              <span>Copy &amp; Autofill login screen</span>
+                            </>
+                          )}
+                        </button>
 
-                    <button
-                      type="button"
-                      onClick={() => setIsForgotPasswordOpen(false)}
-                      className="w-full py-3 border border-gray-210 bg-white hover:bg-slate-50 text-gray-600 font-extrabold text-xs rounded-xl transition-all cursor-pointer text-center leading-none shadow-xs"
-                    >
-                      Close and Login
-                    </button>
-                  </div>
+                        <button
+                          type="button"
+                          onClick={() => setIsForgotPasswordOpen(false)}
+                          className="w-full py-3 border border-gray-210 bg-white hover:bg-slate-50 text-gray-650 font-extrabold text-xs rounded-xl transition-all cursor-pointer text-center leading-none shadow-xs"
+                        >
+                          Close and Login
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      {/* Secure email check card */}
+                      <div className="p-4 bg-emerald-50 border border-emerald-100 rounded-2xl space-y-3 shadow-2xs">
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 rounded-xl bg-white border border-emerald-100 text-[#2E7D32] flex items-center justify-center font-extrabold text-sm shadow-2xs">
+                            ✉️
+                          </div>
+                          <div>
+                            <span className="text-[10px] text-gray-400 font-extrabold uppercase tracking-wide leading-none block">RECIPIENT EMAIL</span>
+                            <span className="text-xs text-[#2E7D32] font-black mt-1 block leading-none">{resetSuccessData.email}</span>
+                          </div>
+                        </div>
+                        <p className="text-[11px] text-[#1E562F] font-bold leading-relaxed">
+                          A temporary password has been successfully dispatched to your email address. 
+                          If testing locally, you can retrieve the message instantly from your local **Mailpit** inbox at 
+                          <a href="http://localhost:8025" target="_blank" rel="noreferrer" className="underline font-black text-emerald-800 ml-1">http://localhost:8025</a>.
+                        </p>
+                      </div>
+
+                      <div className="space-y-3">
+                        <button
+                          type="button"
+                          onClick={() => setIsForgotPasswordOpen(false)}
+                          className="w-full py-3.5 bg-[#2E7D32] hover:bg-[#1E562F] text-white font-extrabold text-xs rounded-xl transition-all cursor-pointer text-center shadow-md"
+                        >
+                          Back to Login
+                        </button>
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
 
