@@ -16,7 +16,7 @@ class UserSeeder extends Seeder
         // 1. ADMINS / SCHEME MANAGERS
         User::create([
             'name' => 'Amantha Salgadu',
-            'email' => 'amanthasal@gmail.com',
+            'email' => 'donovinishansalgadu@gmail.com',
             'email_verified_at' => now(),
             'password' => Hash::make('password123'),
             'phone' => '+94770001122',

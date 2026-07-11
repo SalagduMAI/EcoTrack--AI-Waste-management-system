@@ -91,7 +91,9 @@ export default function Login({ onLoginSuccess }: LoginProps) {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.message || 'Authentication failed. Please verify credentials.');
+        setError(data.message || 'Authentication failed. Please verify credentials.');
+        setLoading(false);
+        return;
       }
 
       // Capture token and user profile
@@ -101,28 +103,11 @@ export default function Login({ onLoginSuccess }: LoginProps) {
       if (token && user) {
         onLoginSuccess(token, user);
       } else {
-        throw new Error('Invalid response structure from backend.');
+        setError('Invalid response structure received from server.');
       }
     } catch (err: any) {
       console.error('Login error:', err);
-      // Robust fallback mechanism to ensure the frontend remains functional for AI studio audits and preview modes.
-      // If the real Laravel backend encounters a database/auth issue or is offline, log using mock user data.
-      let fakeUser: any = null;
-      const displayName = email.split('@')[0];
-      const formattedName = displayName ? displayName.charAt(0).toUpperCase() + displayName.slice(1) : '';
-
-      if (activeRole === 'admin') {
-        fakeUser = { id: 101, name: formattedName || 'Admin User', email, role: 'admin', status: 'active' };
-      } else if (activeRole === 'worker') {
-        fakeUser = { id: 102, name: formattedName || 'Worker User', email, role: 'worker', shift: 'morning', status: 'active' };
-      } else {
-        fakeUser = { id: 103, name: formattedName || 'Resident User', email, role: 'resident', status: 'active' };
-      }
-
-      setError('Activating offline local database sandbox mode...');
-      setTimeout(() => {
-        onLoginSuccess('MOCK_JWT_TOKEN_PLAYGROUND', fakeUser);
-      }, 1000);
+      setError('Connection error: Unable to connect to the database server. Please ensure the backend is running.');
     } finally {
       setLoading(false);
     }
