@@ -16,14 +16,3 @@ use Illuminate\Support\Facades\Route;
 Route::get('/', function () {
     return view('welcome');
 });
-
-Route::get('/reset-admin-password', function () {
-    $user = \App\Models\User::where('email', 'donovinishansalgadu@gmail.com')->first();
-    if ($user) {
-        $user->update([
-            'password' => \Illuminate\Support\Facades\Hash::make('password123')
-        ]);
-        return "Admin password reset to 'password123' successfully!";
-    }
-    return "Admin user not found!";
-});
