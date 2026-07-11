@@ -114,6 +114,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
       newYear -= 1;
     }
     setSelectedCalendarMonth(`${monthsList[newMonthIdx]} ${newYear}`);
+    setSearchQuery('');
   };
 
   const handleNextMonth = () => {
@@ -127,6 +128,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
       newYear += 1;
     }
     setSelectedCalendarMonth(`${monthsList[newMonthIdx]} ${newYear}`);
+    setSearchQuery('');
   };
 
   const formatDateString = (dateStr: string) => {
@@ -316,6 +318,21 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
     // Format both to YYYY-MM-DD for precise match
     const jobDate = j.scheduled_date.split(' ')[0];
     return jobDate === getTodayLocalDateString();
+  });
+
+  const monthJobs = jobs.filter(j => {
+    if (!j.scheduled_date) return false;
+    const dateStr = typeof j.scheduled_date === 'string'
+      ? j.scheduled_date
+      : new Date(j.scheduled_date).toISOString();
+    const parts = dateStr.split(' ')[0].split('T')[0].split('-');
+    if (parts.length !== 3) return false;
+    const jobYear = parseInt(parts[0], 10);
+    const jobMonthNum = parseInt(parts[1], 10);
+    const [selectedMonthName, selectedYearStr] = selectedCalendarMonth.split(' ');
+    const selectedYear = parseInt(selectedYearStr, 10);
+    const selectedMonthNum = monthsList.indexOf(selectedMonthName) + 1; // 1-12
+    return jobYear === selectedYear && jobMonthNum === selectedMonthNum;
   });
 
   const totalJobsCount = todayJobs.length;
@@ -5845,6 +5862,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                       onChange={(e) => {
                         const year = selectedCalendarMonth.split(' ')[1] || '2026';
                         setSelectedCalendarMonth(`${e.target.value} ${year}`);
+                        setSearchQuery('');
                       }}
                       className="bg-white border border-gray-150 rounded-lg px-2.5 py-1 text-xs font-black text-[#164121] cursor-pointer focus:ring-1 focus:ring-emerald-500 outline-none"
                     >
@@ -5859,6 +5877,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                       onChange={(e) => {
                         const month = selectedCalendarMonth.split(' ')[0] || 'May';
                         setSelectedCalendarMonth(`${month} ${e.target.value}`);
+                        setSearchQuery('');
                       }}
                       className="bg-white border border-gray-150 rounded-lg px-2.5 py-1 text-xs font-black text-[#164121] cursor-pointer focus:ring-1 focus:ring-emerald-500 outline-none"
                     >
@@ -5930,11 +5949,11 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                       {/* Left: filters */}
                       <div className="flex flex-wrap items-center gap-2">
                         {[
-                          { key: 'all', label: `All (${jobs.length})` },
-                          { key: 'pending', label: `Pending (${jobs.filter(j => j.status === 'pending').length})` },
-                          { key: 'in_progress', label: `In-Progress (${jobs.filter(j => j.status === 'in_progress' || j.status === 'inprogress').length})` },
-                          { key: 'done', label: `Done (${jobs.filter(j => j.status === 'done').length})` },
-                          { key: 'issue', label: `Issue (${jobs.filter(j => j.status === 'issue').length})` },
+                          { key: 'all', label: `All (${monthJobs.length})` },
+                          { key: 'pending', label: `Pending (${monthJobs.filter(j => j.status === 'pending').length})` },
+                          { key: 'in_progress', label: `In-Progress (${monthJobs.filter(j => j.status === 'in_progress' || j.status === 'inprogress').length})` },
+                          { key: 'done', label: `Done (${monthJobs.filter(j => j.status === 'done').length})` },
+                          { key: 'issue', label: `Issue (${monthJobs.filter(j => j.status === 'issue').length})` },
                         ].map((tab) => (
                           <button
                             key={tab.key}
@@ -5998,7 +6017,18 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                           </thead>
                           <tbody className="divide-y divide-gray-100">
                             {(() => {
-                              const listToDisplay = jobs.filter(j => {
+                              const listToDisplay = monthJobs.filter(j => {
+                                if (searchQuery.trim()) {
+                                  const query = searchQuery.toLowerCase().trim();
+                                  const matchesSearch = 
+                                    j.id.toString().includes(query) ||
+                                    (j.worker?.name || '').toLowerCase().includes(query) ||
+                                    (j.block?.name || '').toLowerCase().includes(query) ||
+                                    (j.unit?.unit_number || '').toLowerCase().includes(query) ||
+                                    (j.status || '').toLowerCase().includes(query) ||
+                                    (j.scheduled_date || '').includes(query);
+                                  if (!matchesSearch) return false;
+                                }
                                 if (jobsFilterTab === 'all') return true;
                                 if (jobsFilterTab === 'pending') return j.status === 'pending';
                                 if (jobsFilterTab === 'in_progress') return j.status === 'in_progress' || j.status === 'inprogress';
