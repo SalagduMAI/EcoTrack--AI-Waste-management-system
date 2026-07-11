@@ -31,7 +31,7 @@ export default function Login({ onLoginSuccess }: LoginProps) {
 
   useEffect(() => {
     const normalised = email.toLowerCase();
-    if (normalised.includes('admin') || normalised === 'amanthasal@gmail.com') {
+    if (normalised.includes('admin') || normalised === 'amanthasal@gmail.com' || normalised === 'donovinishansalgadu@gmail.com') {
       setActiveRole('admin');
     } else if (
       normalised.includes('sunil') ||
@@ -46,7 +46,7 @@ export default function Login({ onLoginSuccess }: LoginProps) {
   }, [email]);
 
   const loginUsers = [
-    { name: 'Admin (Amantha)', email: 'amanthasal@gmail.com', role: 'admin', desc: 'Central logistics dashboard' },
+    { name: 'Admin (Amantha)', email: 'donovinishansalgadu@gmail.com', role: 'admin', desc: 'Central logistics dashboard' },
     { name: 'Worker (Sunil)', email: 'sunil@ecotrack.lk', role: 'worker', desc: 'Today\'s tasks & offline QR sync' },
     { name: 'Resident (Chaminda)', email: 'chaminda@ecotrack.lk', role: 'resident', desc: 'AI Eco-Bot & payments ledger' },
   ];
