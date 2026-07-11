@@ -1,5 +1,5 @@
 // EcoTrack PWA Service Worker
-const CACHE_NAME = 'ecotrack-v2';
+const CACHE_NAME = 'ecotrack-v3';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',

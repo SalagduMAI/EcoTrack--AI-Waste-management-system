@@ -22,5 +22,13 @@ class AppServiceProvider extends ServiceProvider
     {
         // Set standard index string limits representing SQLite / MariaDB defaults
         Schema::defaultStringLength(191);
+
+        try {
+            if (Schema::hasTable('jobs')) {
+                \App\Models\Job::resolveMissedJobs();
+            }
+        } catch (\Exception $e) {
+            // Silence if database not migrated/connected yet
+        }
     }
 }

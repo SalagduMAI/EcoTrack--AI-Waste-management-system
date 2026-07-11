@@ -27,7 +27,7 @@ class Job extends Model
     ];
 
     protected $casts = [
-        'scheduled_date' => 'date',
+        'scheduled_date' => 'date:Y-m-d',
         'scanned_at' => 'datetime',
         'completed_at' => 'datetime',
     ];
@@ -55,6 +55,41 @@ class Job extends Model
                 }
             }
         });
+    }
+
+    public static function resolveMissedJobs()
+    {
+        $now = \Carbon\Carbon::now();
+        $todayStr = $now->format('Y-m-d');
+
+        // 1. Past dates
+        self::where('scheduled_date', '<', $todayStr)
+            ->whereIn('status', ['pending', 'in_progress'])
+            ->update([
+                'status' => 'issue',
+                'issue_reason' => 'Missed Collection - Shift expired without completion'
+            ]);
+
+        // 2. Today\'s ended shifts
+        $currentHour = $now->hour;
+        if ($currentHour >= 14) {
+            self::where('scheduled_date', $todayStr)
+                ->where('shift', 'morning')
+                ->whereIn('status', ['pending', 'in_progress'])
+                ->update([
+                    'status' => 'issue',
+                    'issue_reason' => 'Missed Collection - Morning shift expired'
+                ]);
+        }
+        if ($currentHour >= 22) {
+            self::where('scheduled_date', $todayStr)
+                ->where('shift', 'evening')
+                ->whereIn('status', ['pending', 'in_progress'])
+                ->update([
+                    'status' => 'issue',
+                    'issue_reason' => 'Missed Collection - Evening shift expired'
+                ]);
+        }
     }
 
     /**
