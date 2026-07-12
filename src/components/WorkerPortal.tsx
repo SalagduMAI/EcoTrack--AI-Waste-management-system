@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   CheckCircle, AlertTriangle, Play, RefreshCcw, Wifi, WifiOff, 
   MapPin, Camera, ClipboardCheck, QrCode, Hourglass, Trash2, Check, ArrowRight, Loader2, ListTodo,
@@ -375,6 +375,14 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
   const [timerSeconds, setTimerSeconds] = useState(() => parseInt(localStorage.getItem('ecotrack_shift_timer_seconds') || '0', 10)); 
   const [timerPaused, setTimerPaused] = useState(() => localStorage.getItem('ecotrack_shift_timer_paused') === 'false' ? false : true);
   const [shiftStartTime, setShiftStartTime] = useState<string | null>(() => localStorage.getItem('ecotrack_shift_start_time'));
+
+  const timerSecondsRef = useRef(timerSeconds);
+  const timerPausedRef = useRef(timerPaused);
+  const shiftStartTimeRef = useRef(shiftStartTime);
+
+  useEffect(() => { timerSecondsRef.current = timerSeconds; }, [timerSeconds]);
+  useEffect(() => { timerPausedRef.current = timerPaused; }, [timerPaused]);
+  useEffect(() => { shiftStartTimeRef.current = shiftStartTime; }, [shiftStartTime]);
 
   // Save timer state to localStorage
   useEffect(() => {
@@ -798,13 +806,17 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
           const serverPaused = nextStats.user.shift_timer_paused === true || nextStats.user.shift_timer_paused === 'true' || nextStats.user.shift_timer_paused === 1;
           const serverStartTime = nextStats.user.shift_start_time;
 
-          if (Math.abs(timerSeconds - serverSec) > 5) {
+          const currentLocalSeconds = timerSecondsRef.current;
+          const currentLocalPaused = timerPausedRef.current;
+          const currentLocalStartTime = shiftStartTimeRef.current;
+
+          if (Math.abs(currentLocalSeconds - serverSec) > 5) {
             setTimerSeconds(serverSec);
           }
-          if (timerPaused !== serverPaused) {
+          if (currentLocalPaused !== serverPaused) {
             setTimerPaused(serverPaused);
           }
-          if (shiftStartTime !== serverStartTime) {
+          if (currentLocalStartTime !== serverStartTime) {
             setShiftStartTime(serverStartTime);
           }
         }
