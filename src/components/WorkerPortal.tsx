@@ -696,14 +696,18 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
     try {
       const headers = {
         'Authorization': `Bearer ${token}`,
-        'Accept': 'application/json'
+        'Accept': 'application/json',
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0'
       };
 
       const localDate = new Date().toLocaleDateString('sv-SE');
+      const timestamp = Date.now();
       const [tasksRes, histRes, statsRes] = await Promise.all([
-        fetch(`/api/worker/tasks?date=${localDate}`, { headers }).catch(() => null),
-        fetch('/api/worker/history', { headers }).catch(() => null),
-        fetch(`/api/worker/dashboard-stats?date=${localDate}`, { headers }).catch(() => null),
+        fetch(`/api/worker/tasks?date=${localDate}&_t=${timestamp}`, { headers }).catch(() => null),
+        fetch(`/api/worker/history?_t=${timestamp}`, { headers }).catch(() => null),
+        fetch(`/api/worker/dashboard-stats?date=${localDate}&_t=${timestamp}`, { headers }).catch(() => null),
       ]);
 
       const tasksData = tasksRes && tasksRes.ok ? await tasksRes.json() : null;

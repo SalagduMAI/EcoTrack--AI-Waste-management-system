@@ -686,15 +686,19 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
       const headers = { 
         'Authorization': `Bearer ${token}`, 
         'Accept': 'application/json',
-        'Content-Type': 'application/json' 
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0'
       };
 
+      const timestamp = Date.now();
       const [dashRes, payRes, compRes, rateRes, timelineRes] = await Promise.all([
-        fetch('/api/resident/dashboard', { headers }).catch(() => null),
-        fetch('/api/resident/payments', { headers }).catch(() => null),
-        fetch('/api/resident/complaints', { headers }).catch(() => null),
-        fetch('/api/resident/worker-to-rate', { headers }).catch(() => null),
-        fetch('/api/resident/timeline', { headers }).catch(() => null),
+        fetch(`/api/resident/dashboard?_t=${timestamp}`, { headers }).catch(() => null),
+        fetch(`/api/resident/payments?_t=${timestamp}`, { headers }).catch(() => null),
+        fetch(`/api/resident/complaints?_t=${timestamp}`, { headers }).catch(() => null),
+        fetch(`/api/resident/worker-to-rate?_t=${timestamp}`, { headers }).catch(() => null),
+        fetch(`/api/resident/timeline?_t=${timestamp}`, { headers }).catch(() => null),
       ]);
 
       const dashData = dashRes && dashRes.ok ? await dashRes.json() : null;
