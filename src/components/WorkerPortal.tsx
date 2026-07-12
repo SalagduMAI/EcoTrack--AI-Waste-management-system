@@ -810,12 +810,20 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
           const currentLocalPaused = timerPausedRef.current;
           const currentLocalStartTime = shiftStartTimeRef.current;
 
-          if (Math.abs(currentLocalSeconds - serverSec) > 5) {
-            setTimerSeconds(serverSec);
-          }
           if (currentLocalPaused !== serverPaused) {
             setTimerPaused(serverPaused);
           }
+
+          if (serverPaused) {
+            if (currentLocalSeconds !== serverSec) {
+              setTimerSeconds(serverSec);
+            }
+          } else {
+            if (serverSec > currentLocalSeconds + 5) {
+              setTimerSeconds(serverSec);
+            }
+          }
+
           if (currentLocalStartTime !== serverStartTime) {
             setShiftStartTime(serverStartTime);
           }
