@@ -27,7 +27,7 @@ export default function Login({ onLoginSuccess }: LoginProps) {
   const [isCopied, setIsCopied] = useState(false);
 
   // Derive the active role from the current email input
-  const [activeRole, setActiveRole] = useState<'admin' | 'worker' | 'resident'>('admin');
+  const [activeRole, setActiveRole] = useState<'admin' | 'worker' | 'resident' | 'generic'>('generic');
 
   // Public statistics state
   const [stats, setStats] = useState<{ blocks_count: number; units_count: number; workers_count: number; on_time_percentage: number } | null>(null);
@@ -44,8 +44,10 @@ export default function Login({ onLoginSuccess }: LoginProps) {
   }, []);
 
   useEffect(() => {
-    const normalised = email.toLowerCase();
-    if (normalised.includes('admin') || normalised === 'amanthasal@gmail.com' || normalised === 'donovinishansalgadu@gmail.com') {
+    const normalised = email.trim().toLowerCase();
+    if (!normalised) {
+      setActiveRole('generic');
+    } else if (normalised.includes('admin') || normalised === 'amanthasal@gmail.com' || normalised === 'donovinishansalgadu@gmail.com') {
       setActiveRole('admin');
     } else if (
       normalised.includes('sunil') ||
@@ -330,10 +332,10 @@ export default function Login({ onLoginSuccess }: LoginProps) {
               WELCOME BACK
             </span>
             <h1 className="text-3xl font-extrabold text-[#164121] tracking-tight font-sans">
-              Sign in to your {activeRole === 'admin' ? 'dashboard' : activeRole === 'worker' ? 'pwa collector' : 'own portal'}
+              Sign in to your {activeRole === 'admin' ? 'dashboard' : activeRole === 'worker' ? 'pwa collector' : activeRole === 'resident' ? 'own portal' : 'portal'}
             </h1>
             <p className="text-xs text-gray-500 font-medium leading-relaxed">
-              Use your {activeRole === 'admin' ? 'manager' : activeRole === 'worker' ? 'worker' : 'resident'} credentials to continue.
+              Use your {activeRole === 'admin' ? 'manager' : activeRole === 'worker' ? 'worker' : activeRole === 'resident' ? 'resident' : 'authorized'} credentials to continue.
             </p>
           </div>
 
