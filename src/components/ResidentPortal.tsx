@@ -184,7 +184,7 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
   const [specialCardName, setSpecialCardName] = useState('A. Rajapaksa');
   
   // Home tab Scenario Simulation state
-  const [homeSimulationMode, setHomeSimulationMode] = useState<'active_tracker' | 'normal_caught_up' | 'offline_pending'>('active_tracker');
+  const [homeSimulationMode, setHomeSimulationMode] = useState<'active_tracker' | 'normal_caught_up' | 'offline_pending' | 'pending_job'>('active_tracker');
 
   const handleDownloadPDF = () => {
     const doc = new jsPDF({
@@ -719,7 +719,7 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
               if (next.status === 'in_progress') {
                 setHomeSimulationMode('active_tracker');
               } else if (next.status === 'pending') {
-                setHomeSimulationMode('offline_pending');
+                setHomeSimulationMode('pending_job');
               } else if (next.status === 'done') {
                 setHomeSimulationMode('normal_caught_up');
               }
@@ -1672,7 +1672,7 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
                 <span className="text-[10px] font-bold text-[#1E4D2B] uppercase tracking-widest block font-mono">
                   {homeSimulationMode === 'normal_caught_up' 
                     ? 'No collection scheduled today' 
-                    : homeSimulationMode === 'offline_pending' 
+                    : (homeSimulationMode === 'offline_pending' || homeSimulationMode === 'pending_job') 
                     ? "Today's collection" 
                     : `Greenfield Residencies - ${profileBlock || 'Block A'}`}
                 </span>
@@ -2090,75 +2090,71 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
             <div className="space-y-6 animate-in fade-in duration-200" id="home-dashboard">
               
               {/* Scenario Interactive Simulator Controller Pill Bar */}
-              <div className="bg-[#F4F8F5] border border-gray-150 p-4 rounded-3xl text-left space-y-3 shadow-xs">
-                <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2">
-                  <div>
-                    <h3 className="text-xs font-black text-[#1E4D2B] uppercase tracking-wide flex items-center gap-1.5">
-                      <Sparkles className="w-4 h-4 text-emerald-600 animate-pulse" />
-                      <span>Interactive Live Demo Controller</span>
-                    </h3>
-                    <p className="text-[10.5px] text-gray-550 font-bold leading-normal mt-0.5">
-                      Click the options below to switch between different physical conditions of the system and see how the UI updates:
-                    </p>
-                  </div>
-                  {token === 'MOCK_JWT_TOKEN_PLAYGROUND' ? (
+              {token === 'MOCK_JWT_TOKEN_PLAYGROUND' && (
+                <div className="bg-[#F4F8F5] border border-gray-150 p-4 rounded-3xl text-left space-y-3 shadow-xs">
+                  <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2">
+                    <div>
+                      <h3 className="text-xs font-black text-[#1E4D2B] uppercase tracking-wide flex items-center gap-1.5">
+                        <Sparkles className="w-4 h-4 text-emerald-600 animate-pulse" />
+                        <span>Interactive Live Demo Controller</span>
+                      </h3>
+                      <p className="text-[10.5px] text-gray-550 font-bold leading-normal mt-0.5">
+                        Click the options below to switch between different physical conditions of the system and see how the UI updates:
+                      </p>
+                    </div>
                     <span className="text-[9px] bg-emerald-100 text-emerald-800 font-extrabold px-2 py-0.5 rounded-full uppercase tracking-wider font-mono self-start sm:self-auto select-none">
                       Sandbox Active
                     </span>
-                  ) : (
-                    <span className="text-[9px] bg-blue-100 text-blue-800 font-extrabold px-2 py-0.5 rounded-full uppercase tracking-wider font-mono self-start sm:self-auto select-none">
-                      Database Connected
-                    </span>
-                  )}
-                </div>
-                
-                <div className="flex flex-wrap gap-2 pt-1">
-                  <button
-                    onClick={() => {
-                      setHomeSimulationMode('active_tracker');
-                      setMessage("Demo Switched: Real-time collection active with live tracking GPS!");
-                    }}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border flex items-center gap-1.5 ${
-                      homeSimulationMode === 'active_tracker'
-                        ? 'bg-[#1E4D2B] text-white border-transparent shadow-xs'
-                        : 'bg-white hover:bg-gray-50 text-gray-650 border-gray-200/80 hover:border-gray-350'
-                    }`}
-                  >
-                    <span className="w-2 h-2 rounded-full bg-blue-300 animate-pulse"></span>
-                    <span>{unitProfile?.next_pickup?.worker?.name?.split(' ')[0] || 'Staff'} actively cleaning (Live GPS Tracker)</span>
-                  </button>
+                  </div>
+                  
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    <button
+                      onClick={() => {
+                        setHomeSimulationMode('active_tracker');
+                        setMessage("Demo Switched: Real-time collection active with live tracking GPS!");
+                      }}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border flex items-center gap-1.5 ${
+                        homeSimulationMode === 'active_tracker'
+                          ? 'bg-[#1E4D2B] text-white border-transparent shadow-xs'
+                          : 'bg-white hover:bg-gray-50 text-gray-650 border-gray-200/80 hover:border-gray-350'
+                      }`}
+                    >
+                      <span className="w-2 h-2 rounded-full bg-blue-300 animate-pulse"></span>
+                      <span>{unitProfile?.next_pickup?.worker?.name?.split(' ')[0] || 'Staff'} actively cleaning (Live GPS Tracker)</span>
+                    </button>
 
-                  <button
-                    onClick={() => {
-                      setHomeSimulationMode('normal_caught_up');
-                      setMessage("Demo Switched: Standard Routine Mode (Caught Up Layout).");
-                    }}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border flex items-center gap-1.5 ${
-                      homeSimulationMode === 'normal_caught_up'
-                        ? 'bg-[#1E4D2B] text-white border-transparent shadow-xs'
-                        : 'bg-white hover:bg-gray-50 text-gray-650 border-gray-200/80 hover:border-gray-350'
-                    }`}
-                  >
-                    <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
-                    <span>All Caught Up • No Collection Scheduled today</span>
-                  </button>
+                    <button
+                      onClick={() => {
+                        setHomeSimulationMode('normal_caught_up');
+                        setMessage("Demo Switched: Standard Routine Mode (Caught Up Layout).");
+                      }}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border flex items-center gap-1.5 ${
+                        homeSimulationMode === 'normal_caught_up'
+                          ? 'bg-[#1E4D2B] text-white border-transparent shadow-xs'
+                          : 'bg-white hover:bg-gray-50 text-gray-650 border-gray-200/80 hover:border-gray-350'
+                      }`}
+                    >
+                      <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                      <span>All Caught Up • No Collection Scheduled today</span>
+                    </button>
 
-                  <button
-                    onClick={() => {
-                      setHomeSimulationMode('offline_pending');
-                      setMessage("Demo Switched: Offline state showing cached data alerts.");
-                    }}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border flex items-center gap-1.5 ${
-                      homeSimulationMode === 'offline_pending'
-                        ? 'bg-[#1E4D2B] text-white border-transparent shadow-xs'
-                        : 'bg-white hover:bg-gray-50 text-gray-650 border-gray-200/80 hover:border-gray-350'
-                    }`}
-                  >
-                    <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
-                    <span>Offline warning • Stale stale cache notices</span>
-                  </button>
+                    <button
+                      onClick={() => {
+                        setHomeSimulationMode('offline_pending');
+                        setMessage("Demo Switched: Offline state showing cached data alerts.");
+                      }}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border flex items-center gap-1.5 ${
+                        homeSimulationMode === 'offline_pending'
+                          ? 'bg-[#1E4D2B] text-white border-transparent shadow-xs'
+                          : 'bg-white hover:bg-gray-50 text-gray-650 border-gray-200/80 hover:border-gray-350'
+                      }`}
+                    >
+                      <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
+                      <span>Offline warning • Stale stale cache notices</span>
+                    </button>
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* OFFLINE WARNING ALERT BAR */}
               {homeSimulationMode === 'offline_pending' && (
@@ -2253,7 +2249,7 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
                     </div>
                   )}
 
-                  {homeSimulationMode === 'offline_pending' && (
+                  {(homeSimulationMode === 'offline_pending' || homeSimulationMode === 'pending_job') && (
                     <div className="bg-white border border-gray-150 p-6 rounded-3xl text-left shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4 relative overflow-hidden animate-in fade-in duration-200" id="offline-pending-banner">
                       <div className="flex items-center gap-4 text-left">
                         <div className="w-14 h-14 rounded-full bg-amber-50 border border-amber-200 flex items-center justify-center shrink-0 animate-pulse">
