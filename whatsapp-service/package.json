@@ -1,0 +1,16 @@
+{
+  "name": "ecotrack-whatsapp-service",
+  "version": "1.0.0",
+  "description": "WhatsApp background API gateway for EcoTrack",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "^6.6.0",
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "pino": "^9.1.0",
+    "qrcode": "^1.5.3"
+  }
+}
