@@ -5132,70 +5132,112 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
                 LIVE POSITION • N
               </div>
 
-              {/* Building outline grid with route layout */}
-              <div className="w-full relative py-6">
-                {/* Horizontal main corridor pipeline line */}
-                <div className="absolute top-1/2 left-4 right-4 h-1.5 bg-gray-200 rounded -translate-y-1/2 z-0"></div>
-                {/* Simulated walk path line from start to current */}
-                <div className="absolute top-1/2 left-4 w-[60%] h-1.5 bg-emerald-500 rounded -translate-y-1/2 z-0"></div>
+              {(() => {
+                const sortedTasks = [...tasks].sort((a, b) => {
+                  const weights: Record<string, number> = { done: 1, in_progress: 2, issue: 3, pending: 4 };
+                  const wA = weights[a.status] || 4;
+                  const wB = weights[b.status] || 4;
+                  if (wA !== wB) return wA - wB;
+                  return a.id - b.id;
+                });
 
-                <div className="flex justify-between items-center relative z-10 px-2">
-                  {/* Start Point */}
-                  <div className="flex flex-col items-center">
-                    <div className="w-8 h-8 rounded-full bg-emerald-600 text-white font-black text-[10px] flex items-center justify-center border-4 border-white shadow-md cursor-pointer hover:scale-110 transition-transform">
-                      S
+                const routeVisualTasks = sortedTasks.slice(0, 4);
+                const doneTasksCount = tasks.filter(t => t.status === 'done').length;
+                const totalTasksCount = tasks.length;
+                const progressPct = totalTasksCount > 0 ? (doneTasksCount / totalTasksCount) * 80 : 0;
+
+                const activeTask = sortedTasks.find(t => t.status === 'in_progress' || t.status === 'pending');
+                const activeUnitName = activeTask ? (activeTask.unit?.unit_number || `Floor ${activeTask.floor?.floor_number || 'Corridor'}`) : null;
+                const activeBlockName = activeTask ? (activeTask.block?.name || 'Housing Block') : (tasks[0]?.block?.name || 'Housing Block');
+
+                return (
+                  <>
+                    {/* Building outline grid with route layout */}
+                    <div className="w-full relative py-6">
+                      {/* Horizontal main corridor pipeline line */}
+                      <div className="absolute top-1/2 left-4 right-4 h-1.5 bg-gray-200 rounded -translate-y-1/2 z-0"></div>
+                      {/* Simulated walk path line from start to current */}
+                      <div className="absolute top-1/2 left-4 h-1.5 bg-emerald-500 rounded -translate-y-1/2 z-0" style={{ width: `${progressPct}%` }}></div>
+
+                      <div className="flex justify-between items-center relative z-10 px-2">
+                        {/* Start Point */}
+                        <div className="flex flex-col items-center">
+                          <div className="w-8 h-8 rounded-full bg-emerald-600 text-white font-black text-[10px] flex items-center justify-center border-4 border-white shadow-md cursor-pointer hover:scale-110 transition-transform">
+                            S
+                          </div>
+                          <span className="text-[8px] font-bold text-gray-400 mt-1 uppercase">
+                            {shiftStartTime || '08:00 AM'}
+                          </span>
+                        </div>
+
+                        {routeVisualTasks.map((t) => {
+                          const unitName = t.unit?.unit_number || `Floor ${t.floor?.floor_number || ''}`;
+                          
+                          let icon = '⏱';
+                          let bgClass = 'bg-slate-100 text-gray-550 border-slate-350';
+                          let labelColor = 'text-gray-550';
+                          let animate = '';
+                          
+                          if (t.status === 'done') {
+                            icon = '✓';
+                            bgClass = 'bg-[#1E4D2B] text-white border-transparent';
+                            labelColor = 'text-emerald-800';
+                          } else if (t.status === 'in_progress') {
+                            icon = '🏃‍♂️';
+                            bgClass = 'bg-blue-650 text-white border-transparent';
+                            labelColor = 'text-blue-800';
+                            animate = 'animate-bounce animate-pulse shadow-lg';
+                          } else if (t.status === 'issue') {
+                            icon = '⚠';
+                            bgClass = 'bg-rose-600 text-white border-transparent';
+                            labelColor = 'text-rose-800';
+                          } else if (t.status === 'pending') {
+                            const isNext = sortedTasks.find(x => x.status === 'in_progress' || x.status === 'pending')?.id === t.id;
+                            if (isNext) {
+                              icon = '⏱';
+                              bgClass = 'bg-amber-400 text-white border-transparent';
+                              labelColor = 'text-amber-800';
+                              animate = 'hover:scale-105';
+                            } else {
+                              icon = '➡';
+                              bgClass = 'bg-slate-50 text-gray-400 border-slate-300';
+                              labelColor = 'text-gray-400';
+                            }
+                          }
+
+                          return (
+                            <div key={t.id} className="flex flex-col items-center">
+                              <div className={`w-8 h-8 rounded-full font-mono text-[9px] font-bold flex items-center justify-center border-4 border-white shadow-md group relative transition-transform ${bgClass} ${animate}`}>
+                                {icon}
+                                <div className="absolute -top-8 bg-gray-900 text-white text-[9px] px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">
+                                  {unitName} ({t.status})
+                                </div>
+                              </div>
+                              <span className={`text-[9px] font-black mt-1 ${labelColor}`}>{unitName}</span>
+                            </div>
+                          );
+                        })}
+
+                        {/* End Point Floor Exit */}
+                        <div className="flex flex-col items-center">
+                          <div className="w-8 h-8 rounded-full bg-gray-300 text-gray-600 font-black text-[10px] flex items-center justify-center border-4 border-white shadow-md">
+                            E
+                          </div>
+                          <span className="text-[8px] font-bold text-gray-400 mt-1 uppercase">EXIT</span>
+                        </div>
+                      </div>
                     </div>
-                    <span className="text-[8px] font-bold text-gray-400 mt-1 uppercase">06:00 AM</span>
-                  </div>
 
-                  {/* A-301 */}
-                  <div className="flex flex-col items-center">
-                    <div className="w-8 h-8 rounded-full bg-[#1E4D2B] text-white font-mono text-[9px] font-bold flex items-center justify-center border-4 border-white shadow-md group relative">
-                      ✓
-                      <div className="absolute -top-8 bg-gray-900 text-white text-[9px] px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">A-301 Collected</div>
+                    {/* Status footer with directions guide */}
+                    <div className="w-full text-center bg-white/70 backdrop-blur-xs p-2.5 rounded-xl border border-emerald-100/30 text-[10.5px] font-semibold text-gray-650 leading-relaxed mt-1">
+                      ⛳️ <strong className="text-gray-900">Recommended plan:</strong> {activeUnitName 
+                        ? `Proceed to Unit ${activeUnitName} in Block ${activeBlockName} and begin collection duties.`
+                        : `All scheduled routes for Block ${activeBlockName} have been cleared successfully!`
+                      }
                     </div>
-                    <span className="text-[9px] font-black text-emerald-800 mt-1">A-301</span>
-                  </div>
-
-                  {/* A-302 */}
-                  <div className="flex flex-col items-center">
-                    <div className="w-8 h-8 rounded-full bg-[#1E4D2B] text-white font-mono text-[9px] font-bold flex items-center justify-center border-4 border-white shadow-md group relative font-semibold">
-                      ✓
-                      <div className="absolute -top-8 bg-gray-900 text-white text-[9px] px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">A-302 Collected</div>
-                    </div>
-                    <span className="text-[9px] font-black text-emerald-800 mt-1">A-302</span>
-                  </div>
-
-                  {/* A-303 (In-Progress) */}
-                  <div className="flex flex-col items-center">
-                    <div className="w-9 h-9 rounded-full bg-blue-600 text-white font-mono text-[10px] font-bold flex items-center justify-center border-4 border-white shadow-lg group relative animate-bounce animate-pulse">
-                      🏃‍♂️
-                    </div>
-                    <span className="text-[9px] font-black text-blue-750 mt-1">A-303</span>
-                  </div>
-
-                  {/* A-304 (Next) */}
-                  <div className="flex flex-col items-center">
-                    <div className="w-8 h-8 rounded-full bg-amber-400 text-white font-mono text-[9px] font-bold flex items-center justify-center border-4 border-white shadow-md group relative hover:scale-105 transition-transform">
-                      ⏱
-                    </div>
-                    <span className="text-[9px] font-black text-amber-700 mt-1">A-304</span>
-                  </div>
-
-                  {/* End Point Floor Exit */}
-                  <div className="flex flex-col items-center">
-                    <div className="w-8 h-8 rounded-full bg-gray-300 text-gray-600 font-black text-[10px] flex items-center justify-center border-4 border-white shadow-md">
-                      E
-                    </div>
-                    <span className="text-[8px] font-bold text-gray-400 mt-1 uppercase">EXIT</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Status footer with directions guide */}
-              <div className="w-full text-center bg-white/70 backdrop-blur-xs p-2.5 rounded-xl border border-emerald-100/30 text-[10.5px] font-semibold text-gray-650 leading-relaxed mt-1">
-                ⛳️ <strong className="text-gray-900">Recommended plan:</strong> Walk east down the Level 3 north corridor. Turn left at Unit A-303 container station.
-              </div>
+                  </>
+                );
+              })()}
             </div>
 
             {/* Action buttons */}
