@@ -374,20 +374,28 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
 
   const [timerSeconds, setTimerSeconds] = useState(() => parseInt(localStorage.getItem('ecotrack_shift_timer_seconds') || '0', 10)); 
   const [timerPaused, setTimerPaused] = useState(() => localStorage.getItem('ecotrack_shift_timer_paused') === 'false' ? false : true);
+  const [shiftStartTime, setShiftStartTime] = useState<string | null>(() => localStorage.getItem('ecotrack_shift_start_time'));
 
   // Save timer state to localStorage
   useEffect(() => {
     localStorage.setItem('ecotrack_shift_timer_seconds', timerSeconds.toString());
     localStorage.setItem('ecotrack_shift_timer_paused', timerPaused.toString());
-  }, [timerSeconds, timerPaused]);
+    if (shiftStartTime) {
+      localStorage.setItem('ecotrack_shift_start_time', shiftStartTime);
+    } else {
+      localStorage.removeItem('ecotrack_shift_start_time');
+    }
+  }, [timerSeconds, timerPaused, shiftStartTime]);
 
   // Check if shift has changed or ended on load/mount
   useEffect(() => {
     if (!isWithinShiftHours()) {
       localStorage.removeItem('ecotrack_shift_timer_seconds');
       localStorage.removeItem('ecotrack_shift_timer_paused');
+      localStorage.removeItem('ecotrack_shift_start_time');
       setTimerSeconds(0);
       setTimerPaused(true);
+      setShiftStartTime(null);
     }
   }, [localUser?.shift]);
 
@@ -2117,9 +2125,16 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
 
                   <button
                     onClick={() => {
-                      if (timerPaused && !isWithinShiftHours()) {
-                        setMessage({ text: `Cannot start shift: You are outside your scheduled ${localUser?.shift || 'Morning'} shift hours.`, type: 'error' });
-                        return;
+                      if (timerPaused) {
+                        if (!isWithinShiftHours()) {
+                          setMessage({ text: `Cannot start shift: You are outside your scheduled ${localUser?.shift || 'Morning'} shift hours.`, type: 'error' });
+                          return;
+                        }
+                        if (timerSeconds === 0) {
+                          const now = new Date();
+                          const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+                          setShiftStartTime(timeStr);
+                        }
                       }
                       setTimerPaused(!timerPaused);
                     }}
@@ -2247,16 +2262,29 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
                       {/* Shift Started step */}
                       <div className="flex items-center justify-between text-xs">
                         <div className="flex items-center gap-3">
-                          <div className="w-7 h-7 bg-[#EBFDF2] border-2 border-emerald-500 rounded-full flex items-center justify-center text-emerald-600 font-mono text-[10px] font-black z-10 shrink-0">
-                            D
+                          <div className={`w-7 h-7 border-2 rounded-full flex items-center justify-center font-mono text-[10px] font-black z-10 shrink-0 ${
+                            shiftStartTime 
+                              ? 'bg-[#EBFDF2] border-emerald-500 text-emerald-600' 
+                              : 'bg-slate-50 border-slate-300 text-slate-500'
+                          }`}>
+                            {shiftStartTime ? 'D' : '⏱'}
                           </div>
                           <span className="font-bold text-gray-400 font-mono w-10 text-left">
-                            {(localUser?.shift?.toLowerCase() || '').includes('evening') ? '14:00' : 
-                             (localUser?.shift?.toLowerCase() || '').includes('night') ? '20:00' : '08:00'}
+                            {shiftStartTime || 
+                             ((localUser?.shift?.toLowerCase() || '').includes('evening') ? '14:00' : 
+                              (localUser?.shift?.toLowerCase() || '').includes('night') ? '20:00' : '08:00')}
                           </span>
-                          <span className="font-extrabold text-gray-900">Shift started</span>
+                          <span className={shiftStartTime ? 'font-extrabold text-gray-900' : 'text-gray-500 font-semibold'}>
+                            Shift started
+                          </span>
                         </div>
-                        <span className="text-[10px] font-black text-emerald-700 bg-[#EBFDF2] px-2.5 py-0.5 rounded-full uppercase">Done</span>
+                        <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase ${
+                          shiftStartTime 
+                            ? 'text-emerald-700 bg-[#EBFDF2]' 
+                            : 'text-gray-500 bg-slate-100'
+                        }`}>
+                          {shiftStartTime ? 'Done' : 'Pending'}
+                        </span>
                       </div>
 
                       {/* Dynamic Tasks list */}
@@ -2278,18 +2306,25 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
                             if (t.completed_at || t.scanned_at) {
                               try {
                                 const d = new Date(t.completed_at || t.scanned_at);
-                                timeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                                timeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
                               } catch {
-                                timeStr = '08:15';
+                                timeStr = '--:--';
                               }
                             } else {
-                              // Estimate time
-                              const startHour = (localUser?.shift?.toLowerCase() || '').includes('evening') ? 14 : 
-                                               (localUser?.shift?.toLowerCase() || '').includes('night') ? 20 : 8;
-                              const estMinutes = (idx + 1) * 12;
-                              const estHour = startHour + Math.floor(estMinutes / 60);
-                              const estMin = estMinutes % 60;
-                              timeStr = `${estHour.toString().padStart(2, '0')}:${estMin.toString().padStart(2, '0')}`;
+                              if (!shiftStartTime) {
+                                timeStr = '--:--';
+                              } else {
+                                try {
+                                  const [startH, startM] = shiftStartTime.split(':').map(Number);
+                                  const totalStartMinutes = startH * 60 + startM;
+                                  const estMinutes = totalStartMinutes + (idx + 1) * 12;
+                                  const estHour = Math.floor(estMinutes / 60) % 24;
+                                  const estMin = estMinutes % 60;
+                                  timeStr = `${estHour.toString().padStart(2, '0')}:${estMin.toString().padStart(2, '0')}`;
+                                } catch {
+                                  timeStr = '--:--';
+                                }
+                              }
                             }
 
                             // Style details based on status
