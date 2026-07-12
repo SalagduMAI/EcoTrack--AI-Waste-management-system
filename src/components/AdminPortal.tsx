@@ -72,6 +72,10 @@ const formatLocalDateTimeString = (dateTimeInput: any) => {
   }
 };
 
+const WA_API_URL = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+  ? 'http://localhost:3001'
+  : 'https://app-fa3e21e0-614b-4b2a-89a9-ecff90d1bcab.cleverapps.io';
+
 export default function AdminPortal({ token, user, onLogout, onUserUpdate }: AdminPortalProps) {
   // Navigation tabs mirroring the screenshot sidebar
   const [activeTab, setActiveTab] = useState<'dashboard' | 'housing' | 'users' | 'jobs' | 'qrcodes' | 'payments' | 'complaints' | 'reports' | 'settings' | 'logout'>('dashboard');
@@ -932,7 +936,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
     let interval: any;
     
     const checkStatus = () => {
-      fetch('http://localhost:3001/status')
+      fetch(`${WA_API_URL}/status`)
         .then(res => res.json())
         .then(data => {
           setWaStatus(data.status);
@@ -6890,7 +6894,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                             };
                             
                             try {
-                              const res = await fetch('http://localhost:3001/send', {
+                              const res = await fetch(`${WA_API_URL}/send`, {
                                 method: 'POST',
                                 headers: {
                                   'Content-Type': 'application/json'
@@ -10628,7 +10632,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                                 if (confirm("Are you sure you want to disconnect this WhatsApp channel?")) {
                                   setWaLoading(true);
                                   try {
-                                    await fetch('http://localhost:3001/logout', { method: 'POST' });
+                                    await fetch(`${WA_API_URL}/logout`, { method: 'POST' });
                                   } catch (err) {
                                     console.error(err);
                                   } finally {
