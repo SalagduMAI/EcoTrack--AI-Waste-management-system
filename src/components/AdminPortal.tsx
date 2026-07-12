@@ -1247,7 +1247,10 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
           assignedBlocks: u.assigned_blocks || 'All Blocks',
           avatar: u.profile_photo_path
             ? (u.profile_photo_path.startsWith('http') ? u.profile_photo_path : `/storage/${u.profile_photo_path}`)
-            : (u.name || 'W').split(' ').map((n: string) => n[0]).join('').toUpperCase()
+            : (u.name || 'W').split(' ').map((n: string) => n[0]).join('').toUpperCase(),
+          shift_timer_seconds: u.shift_timer_seconds ? Number(u.shift_timer_seconds) : 0,
+          shift_timer_paused: u.shift_timer_paused === true || u.shift_timer_paused === 'true' || u.shift_timer_paused === 1,
+          shift_start_time: u.shift_start_time || null,
         }));
         setUsers(parsedWorkers);
 
@@ -4671,28 +4674,66 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                   <p className="text-[10px] text-gray-400 font-bold uppercase mt-0.5">Active field shifts</p>
                 </div>
                 <div className="space-y-3.5 mt-4">
-                  {users.filter(u => u.role === 'worker').slice(0, 3).map((w, index) => (
-                    <div key={w.id || index} className="flex justify-between items-center bg-gray-50/50 p-2.5 rounded-2xl border border-gray-100">
-                      <div className="flex items-center gap-2.5 flex-1 min-w-0">
-                        <div className="w-6 h-6 rounded-full bg-emerald-100 flex items-center justify-center text-[9px] font-black text-[#2E7D32] overflow-hidden shrink-0">
-                          {(w.avatar && (w.avatar.startsWith('http') || w.avatar.startsWith('data:') || w.avatar.startsWith('/storage') || w.avatar.includes('.'))) ? (
-                            <img src={w.avatar} alt={w.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                          ) : (
-                            (w.avatar && w.avatar.length <= 3) ? w.avatar : w.name.slice(0, 2).toUpperCase()
-                          )}
+                  {users.filter((u: any) => u.role === 'worker').slice(0, 3).map((w: any, index: number) => {
+                    const now = new Date();
+                    const hours = now.getHours();
+                    const s = (w.shift || 'Morning').toLowerCase();
+                    
+                    let isWithinHours = false;
+                    if (s.includes('morning')) {
+                      isWithinHours = hours >= 8 && hours < 14;
+                    } else if (s.includes('evening')) {
+                      isWithinHours = hours >= 14 && hours < 22;
+                    } else if (s.includes('night')) {
+                      isWithinHours = hours >= 22 || hours < 6;
+                    }
+
+                    const isStarted = !!w.shift_start_time;
+                    const isPaused = w.shift_timer_paused;
+
+                    let statusText = 'Off Duty';
+                    let textClass = 'text-gray-500 bg-gray-100';
+                    let dotClass = 'bg-gray-400';
+
+                    if (isWithinHours) {
+                      if (!isStarted) {
+                        statusText = 'Pending';
+                        textClass = 'text-blue-650 bg-blue-50';
+                        dotClass = 'bg-blue-400';
+                      } else if (isPaused) {
+                        statusText = 'Paused';
+                        textClass = 'text-amber-600 bg-amber-50';
+                        dotClass = 'bg-amber-500';
+                      } else {
+                        statusText = 'On Duty';
+                        textClass = 'text-emerald-600 bg-emerald-50';
+                        dotClass = 'bg-emerald-500 animate-pulse';
+                      }
+                    }
+
+                    return (
+                      <div key={w.id || index} className="flex justify-between items-center bg-gray-50/50 p-2.5 rounded-2xl border border-gray-100">
+                        <div className="flex items-center gap-2.5 flex-1 min-w-0">
+                          <div className="w-6 h-6 rounded-full bg-emerald-100 flex items-center justify-center text-[9px] font-black text-[#2E7D32] overflow-hidden shrink-0">
+                            {(w.avatar && (w.avatar.startsWith('http') || w.avatar.startsWith('data:') || w.avatar.startsWith('/storage') || w.avatar.includes('.'))) ? (
+                              <img src={w.avatar} alt={w.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                            ) : (
+                              (w.avatar && w.avatar.length <= 3) ? w.avatar : w.name.slice(0, 2).toUpperCase()
+                            )}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-[10.5px] font-bold text-gray-800 leading-tight truncate">{w.name}</p>
+                            <span className="text-[8px] text-gray-400 font-black tracking-wide uppercase mt-0.5 block truncate">{w.shift || 'Morning'} shift</span>
+                          </div>
                         </div>
-                        <div className="min-w-0">
-                          <p className="text-[10.5px] font-bold text-gray-800 leading-tight truncate">{w.name}</p>
-                          <span className="text-[8px] text-gray-400 font-black tracking-wide uppercase mt-0.5 block truncate">{w.shift || 'Morning'} shift</span>
-                        </div>
+                        <span className={`flex items-center gap-1.5 text-[8.5px] font-black px-2 py-0.5 rounded-lg uppercase tracking-wide ${textClass}`}>
+                          <span className={`w-1.5 h-1.5 rounded-full ${dotClass}`}></span>
+                          {statusText}
+                        </span>
                       </div>
-                      <span className="flex items-center gap-1.5 text-[8.5px] font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-lg uppercase tracking-wide">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                        On Duty
-                      </span>
-                    </div>
-                  ))}
-                  {users.filter(u => u.role === 'worker').length === 0 && (
+                    );
+                  })}
+                  {users.filter((u: any) => u.role === 'worker').length === 0 && (
                     <p className="text-[10px] text-gray-400 font-bold text-center py-4">No active field workers.</p>
                   )}
                 </div>
