@@ -192,6 +192,24 @@ class JobController extends Controller
                 'message' => "You have been assigned a new collection task at {$locationLabel} in Block {$blockName} for " . Carbon::parse($scheduledDate)->format('M d, Y') . " (" . ucfirst($shift) . " shift).",
                 'read' => false,
             ]);
+
+            // Dispatch real-time email notification
+            $worker = \App\Models\User::find($workerId);
+            if ($worker && $worker->email) {
+                $subject = "EcoTrack: New Collection Job Assigned";
+                $body = "Hi " . $worker->name . ",\n\n"
+                      . "You have been assigned a new collection task:\n"
+                      . "- Location: {$locationLabel}, Block {$blockName}\n"
+                      . "- Date: " . Carbon::parse($scheduledDate)->format('M d, Y') . "\n"
+                      . "- Shift: " . ucfirst($shift) . " shift\n\n"
+                      . "Please login to your EcoTrack portal to view and manage this task.\n\n"
+                      . "Regards,\nEcoTrack Security";
+                
+                \Illuminate\Support\Facades\Mail::raw($body, function ($message) use ($worker, $subject) {
+                    $message->to($worker->email)
+                            ->subject($subject);
+                });
+            }
         } catch (\Exception $e) {
             // Fail silently to avoid breaking job creation
         }
@@ -334,6 +352,24 @@ class JobController extends Controller
                     'message' => "You have been assigned {$createdCount} new collection tasks in Block {$blockName} for " . Carbon::parse($scheduledDate)->format('M d, Y') . " (" . ucfirst($request->shift) . " shift).",
                     'read' => false,
                 ]);
+
+                // Dispatch real-time email notification for bulk assignments
+                $worker = \App\Models\User::find($request->worker_id);
+                if ($worker && $worker->email) {
+                    $subject = "EcoTrack: New Bulk Collection Jobs Assigned";
+                    $body = "Hi " . $worker->name . ",\n\n"
+                          . "You have been assigned {$createdCount} new collection tasks:\n"
+                          . "- Block: {$blockName}\n"
+                          . "- Date: " . Carbon::parse($scheduledDate)->format('M d, Y') . "\n"
+                          . "- Shift: " . ucfirst($request->shift) . " shift\n\n"
+                          . "Please login to your EcoTrack portal to view and manage these tasks.\n\n"
+                          . "Regards,\nEcoTrack Security";
+                    
+                    \Illuminate\Support\Facades\Mail::raw($body, function ($message) use ($worker, $subject) {
+                        $message->to($worker->email)
+                                ->subject($subject);
+                    });
+                }
             } catch (\Exception $e) {
                 // Fail silently to avoid breaking job creation
             }
