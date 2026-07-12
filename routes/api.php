@@ -20,6 +20,7 @@ use App\Http\Controllers\AuthController;
 // ==============================================================================
 Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:5,1');
 Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
+Route::get('/public/stats', [AuthController::class, 'getLandingStats']);
 
 // ==============================================================================
 // PROTECTED ROUTES (Requires Laravel Sanctum Token)

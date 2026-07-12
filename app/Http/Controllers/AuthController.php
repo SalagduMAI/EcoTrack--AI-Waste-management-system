@@ -285,4 +285,43 @@ class AuthController extends Controller
             ]
         ], 200);
     }
+
+    /**
+     * Get public statistics for the landing/login page.
+     *
+     * @return JsonResponse
+     */
+    public function getLandingStats(): JsonResponse
+    {
+        try {
+            $blocksCount = \App\Models\Block::count();
+            if ($blocksCount === 0) $blocksCount = 3;
+
+            $unitsCount = \App\Models\Unit::count();
+            if ($unitsCount === 0) $unitsCount = 75;
+
+            $workersCount = User::where('role', 'worker')->count();
+            if ($workersCount === 0) $workersCount = 2;
+
+            $totalDone = \App\Models\Job::where('status', 'done')->count();
+            $totalFailed = \App\Models\Job::where('status', 'issue')->count();
+            $totalEnded = $totalDone + $totalFailed;
+            $onTimePercentage = $totalEnded > 0 ? round(($totalDone / $totalEnded) * 100, 1) : 98.4;
+
+            return response()->json([
+                'status' => 'success',
+                'data' => [
+                    'blocks_count' => $blocksCount,
+                    'units_count' => $unitsCount,
+                    'workers_count' => $workersCount,
+                    'on_time_percentage' => $onTimePercentage,
+                ]
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to retrieve stats: ' . $e->getMessage()
+            ], 500);
+        }
+    }
 }

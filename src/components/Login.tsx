@@ -29,6 +29,20 @@ export default function Login({ onLoginSuccess }: LoginProps) {
   // Derive the active role from the current email input
   const [activeRole, setActiveRole] = useState<'admin' | 'worker' | 'resident'>('admin');
 
+  // Public statistics state
+  const [stats, setStats] = useState<{ blocks_count: number; units_count: number; workers_count: number; on_time_percentage: number } | null>(null);
+
+  useEffect(() => {
+    fetch('/api/public/stats')
+      .then(res => res.json())
+      .then(data => {
+        if (data.status === 'success' && data.data) {
+          setStats(data.data);
+        }
+      })
+      .catch(err => console.error('Failed to load landing stats:', err));
+  }, []);
+
   useEffect(() => {
     const normalised = email.toLowerCase();
     if (normalised.includes('admin') || normalised === 'amanthasal@gmail.com' || normalised === 'donovinishansalgadu@gmail.com') {
@@ -172,10 +186,26 @@ export default function Login({ onLoginSuccess }: LoginProps) {
     emoji: '🌿',
     desc: "Welcome to Greenfield's centralized logistics, collection, and resident advisory hub. Connecting residents, operators, and administration to build a cleaner, sustainable future.",
     metrics: [
-      { label: 'Greenfield complex', value: '3 Blocks (75+ Units)', icon: <Building className="w-5 h-5 text-emerald-300" /> },
-      { label: 'Active logistics', value: 'Collection Crew', icon: <Users className="w-5 h-5 text-emerald-300" /> },
-      { label: 'Logistics SLA', value: '98.4% On-Time', icon: <CheckCircle className="w-5 h-5 text-emerald-300" /> },
-      { label: 'Platform Security', value: 'Sanctum Encrypted', icon: <Shield className="w-5 h-5 text-emerald-300" /> }
+      { 
+        label: 'Greenfield complex', 
+        value: stats ? `${stats.blocks_count} Blocks (${stats.units_count}+ Units)` : '3 Blocks (75+ Units)', 
+        icon: <Building className="w-5 h-5 text-emerald-300" /> 
+      },
+      { 
+        label: 'Active logistics', 
+        value: stats ? `${stats.workers_count} Active Crew` : 'Collection Crew', 
+        icon: <Users className="w-5 h-5 text-emerald-300" /> 
+      },
+      { 
+        label: 'Logistics SLA', 
+        value: stats ? `${stats.on_time_percentage}% On-Time` : '98.4% On-Time', 
+        icon: <CheckCircle className="w-5 h-5 text-emerald-300" /> 
+      },
+      { 
+        label: 'Platform Security', 
+        value: 'Sanctum Encrypted', 
+        icon: <Shield className="w-5 h-5 text-emerald-300" /> 
+      }
     ]
   };
 
