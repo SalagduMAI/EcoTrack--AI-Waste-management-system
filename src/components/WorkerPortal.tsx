@@ -396,7 +396,6 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
   }, [timerSeconds, timerPaused, shiftStartTime]);
 
   const saveShiftTimerToServer = async (seconds: number, paused: boolean, startTime: string | null) => {
-    const token = localStorage.getItem('ecotrack_auth_token') || sessionStorage.getItem('ecotrack_auth_token');
     if (!token) return;
 
     try {
