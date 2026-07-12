@@ -6851,6 +6851,17 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                         <button
                           type="button"
                           onClick={() => {
+                            if (contactChannel === 'whatsapp' && jobRes.phone) {
+                              const cleanPhone = jobRes.phone.replace(/[^0-9]/g, '');
+                              let waPhone = cleanPhone;
+                              if (cleanPhone.startsWith('0')) {
+                                waPhone = '94' + cleanPhone.substring(1);
+                              } else if (!cleanPhone.startsWith('94') && cleanPhone.length === 9) {
+                                waPhone = '94' + cleanPhone;
+                              }
+                              const url = `https://wa.me/${waPhone}?text=${encodeURIComponent(contactMessage)}`;
+                              window.open(url, '_blank');
+                            }
                             setFeedbackMessage(`Outgoing real-time alert nudge dispatched to unit ${contactJob.unit?.unit_number} (${jobRes.name}) via ${contactChannel === 'whatsapp' ? 'WhatsApp Gateway' : 'SMS Network'} successfully.`);
                             setContactJob(null);
                           }}
