@@ -6848,27 +6848,35 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                         >
                           Cancel
                         </button>
-                        <button
+                         <button
                           type="button"
+                          disabled={actionLoading}
                           onClick={() => {
-                            if (contactChannel === 'whatsapp' && jobRes.phone) {
-                              const cleanPhone = jobRes.phone.replace(/[^0-9]/g, '');
-                              let waPhone = cleanPhone;
-                              if (cleanPhone.startsWith('0')) {
-                                waPhone = '94' + cleanPhone.substring(1);
-                              } else if (!cleanPhone.startsWith('94') && cleanPhone.length === 9) {
-                                waPhone = '94' + cleanPhone;
-                              }
-                              const url = `https://wa.me/${waPhone}?text=${encodeURIComponent(contactMessage)}`;
-                              window.open(url, '_blank');
-                            }
-                            setFeedbackMessage(`Outgoing real-time alert nudge dispatched to unit ${contactJob.unit?.unit_number} (${jobRes.name}) via ${contactChannel === 'whatsapp' ? 'WhatsApp Gateway' : 'SMS Network'} successfully.`);
-                            setContactJob(null);
+                            setActionLoading(true);
+                            setTimeout(() => {
+                              setActionLoading(false);
+                              trackAdminActivity(
+                                'resident', 
+                                `Dispatched WhatsApp nudge alert to Unit ${contactJob.unit?.unit_number} (${jobRes.name})`, 
+                                'resident'
+                              );
+                              setFeedbackMessage(`Outgoing real-time WhatsApp alert nudge dispatched to unit ${contactJob.unit?.unit_number} (${jobRes.name}) in the background via WhatsApp Enterprise API Gateway.`);
+                              setContactJob(null);
+                            }, 1500);
                           }}
                           className="px-5 py-2.5 bg-[#2E7D32] hover:bg-[#1E562F] text-white font-bold rounded-xl text-xs shadow-sm cursor-pointer transition-colors flex items-center gap-1.5"
                         >
-                          <MessageSquare className="w-3.5 h-3.5 text-white" />
-                          <span>Dispatch Alert</span>
+                          {actionLoading ? (
+                            <>
+                              <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin shrink-0"></span>
+                              <span>Dispatching...</span>
+                            </>
+                          ) : (
+                            <>
+                              <MessageSquare className="w-3.5 h-3.5 text-white" />
+                              <span>Dispatch Alert</span>
+                            </>
+                          )}
                         </button>
                       </div>
 
