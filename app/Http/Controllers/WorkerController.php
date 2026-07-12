@@ -655,11 +655,20 @@ class WorkerController extends Controller
             'shift_start_time' => 'nullable|string',
         ]);
 
-        $worker->update([
-            'shift_timer_seconds' => $request->input('shift_timer_seconds', 0),
-            'shift_timer_paused' => $request->has('shift_timer_paused') ? (bool) $request->input('shift_timer_paused') : true,
-            'shift_start_time' => $request->input('shift_start_time'),
-        ]);
+        $updateData = [];
+        if ($request->has('shift_timer_seconds')) {
+            $updateData['shift_timer_seconds'] = $request->input('shift_timer_seconds');
+        }
+        if ($request->has('shift_timer_paused')) {
+            $updateData['shift_timer_paused'] = (bool) $request->input('shift_timer_paused');
+        }
+        if ($request->has('shift_start_time')) {
+            $updateData['shift_start_time'] = $request->input('shift_start_time');
+        }
+
+        if (!empty($updateData)) {
+            $worker->update($updateData);
+        }
 
         return response()->json([
             'status' => 'success',

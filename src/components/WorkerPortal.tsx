@@ -395,8 +395,13 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
     }
   }, [timerSeconds, timerPaused, shiftStartTime]);
 
-  const saveShiftTimerToServer = async (seconds: number, paused: boolean, startTime: string | null) => {
+  const saveShiftTimerToServer = async (seconds?: number, paused?: boolean, startTime?: string | null) => {
     if (!token) return;
+
+    const bodyData: any = {};
+    if (seconds !== undefined) bodyData.shift_timer_seconds = seconds;
+    if (paused !== undefined) bodyData.shift_timer_paused = paused;
+    if (startTime !== undefined) bodyData.shift_start_time = startTime;
 
     try {
       await fetch('/api/worker/shift-timer', {
@@ -406,11 +411,7 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
           'Content-Type': 'application/json',
           'Accept': 'application/json'
         },
-        body: JSON.stringify({
-          shift_timer_seconds: seconds,
-          shift_timer_paused: paused,
-          shift_start_time: startTime
-        })
+        body: JSON.stringify(bodyData)
       });
     } catch (err) {
       console.error('Failed to sync shift timer to server:', err);
@@ -450,7 +451,7 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
           setTimerSeconds(s => {
             const nextSec = s + 1;
             if (nextSec % 10 === 0) {
-              saveShiftTimerToServer(nextSec, timerPaused, shiftStartTime);
+              saveShiftTimerToServer(nextSec);
             }
             return nextSec;
           });
