@@ -1,6 +1,6 @@
 const express = require('express');
 const cors = require('cors');
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
 const pino = require('pino');
 const QRCode = require('qrcode');
 const fs = require('fs');
@@ -20,7 +20,19 @@ let currentQr = null;
 async function startWhatsApp() {
     const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
     
+    let version = [2, 3000, 1015978432]; // Default high fallback version if API fails
+    try {
+        const latest = await fetchLatestBaileysVersion();
+        if (latest && latest.version) {
+            version = latest.version;
+            console.log(`Using fetched WhatsApp Web version v${version.join('.')}, isLatest: ${latest.isLatest}`);
+        }
+    } catch (e) {
+        console.error('Failed to fetch latest Baileys version, using fallback:', e);
+    }
+    
     sock = makeWASocket({
+        version,
         auth: state,
         logger: pino({ level: 'silent' }),
         printQRInTerminal: true
