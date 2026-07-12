@@ -1110,21 +1110,56 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
   };
 
   // Change password handler
-  const handleSavePassword = (e: React.FormEvent) => {
+  const handleSavePassword = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newPassword || !confirmPassword) {
-      setMessage({ text: 'Please fill in all database credential fields.', type: 'error' });
+    if (!currentPassword) {
+      setMessage({ text: 'Current password is required.', type: 'error' });
+      return;
+    }
+    if (!newPassword || newPassword.length < 8) {
+      setMessage({ text: 'New password must be at least 8 characters long.', type: 'error' });
       return;
     }
     if (newPassword !== confirmPassword) {
       setMessage({ text: 'Security credentials do not match.', type: 'error' });
       return;
     }
-    setMessage({ text: 'Security password changed successfully in local keychain.', type: 'success' });
-    setIsChangePasswordModalOpen(false);
-    setCurrentPassword('');
-    setNewPassword('');
-    setConfirmPassword('');
+
+    setActionLoading(true);
+    try {
+      const response = await fetch('/api/profile/update', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          name: localUser.name,
+          phone: localUser.phone,
+          current_password: currentPassword,
+          password: newPassword,
+          password_confirmation: confirmPassword
+        })
+      });
+
+      const data = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        const errMsg = data?.message || (data?.errors && Object.values(data.errors).flat().join(' ')) || "Failed to update password.";
+        throw new Error(errMsg);
+      }
+
+      setMessage({ text: 'Security password updated successfully in database!', type: 'success' });
+      setIsChangePasswordModalOpen(false);
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+    } catch (err: any) {
+      setMessage({ text: `Error: ${err.message || 'Verification failed. Please double check your current password.'}`, type: 'error' });
+    } finally {
+      setActionLoading(false);
+    }
   };
 
   // Submit issues & incidents
