@@ -387,6 +387,29 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
     }
   }, [timerSeconds, timerPaused, shiftStartTime]);
 
+  const saveShiftTimerToServer = async (seconds: number, paused: boolean, startTime: string | null) => {
+    const token = localStorage.getItem('ecotrack_auth_token') || sessionStorage.getItem('ecotrack_auth_token');
+    if (!token) return;
+
+    try {
+      await fetch('/api/worker/shift-timer', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify({
+          shift_timer_seconds: seconds,
+          shift_timer_paused: paused,
+          shift_start_time: startTime
+        })
+      });
+    } catch (err) {
+      console.error('Failed to sync shift timer to server:', err);
+    }
+  };
+
   // Check if shift has changed or ended on load/mount
   useEffect(() => {
     if (!isWithinShiftHours()) {
@@ -396,6 +419,7 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
       setTimerSeconds(0);
       setTimerPaused(true);
       setShiftStartTime(null);
+      saveShiftTimerToServer(0, true, null);
     }
   }, [localUser?.shift]);
 
@@ -416,17 +440,24 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
     if (!timerPaused) {
       if (isWithinShiftHours()) {
         interval = setInterval(() => {
-          setTimerSeconds(s => s + 1);
+          setTimerSeconds(s => {
+            const nextSec = s + 1;
+            if (nextSec % 10 === 0) {
+              saveShiftTimerToServer(nextSec, timerPaused, shiftStartTime);
+            }
+            return nextSec;
+          });
         }, 1000);
       } else {
         setTimerPaused(true);
+        saveShiftTimerToServer(timerSeconds, true, shiftStartTime);
         setMessage({ text: 'Shift timer paused automatically: Shift hours have ended.', type: 'warn' });
       }
     }
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [timerPaused, localUser?.shift]);
+  }, [timerPaused, localUser?.shift, shiftStartTime]);
 
   // Format second counts to HH:MM:SS
   const formatTimer = (totalSeconds: number) => {
@@ -761,6 +792,20 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
               ...nextStats.user,
               shift: nextStats.user.shift ? nextStats.user.shift.charAt(0).toUpperCase() + nextStats.user.shift.slice(1) : user?.shift
             });
+          }
+
+          const serverSec = parseInt(nextStats.user.shift_timer_seconds || '0', 10);
+          const serverPaused = nextStats.user.shift_timer_paused === true || nextStats.user.shift_timer_paused === 'true' || nextStats.user.shift_timer_paused === 1;
+          const serverStartTime = nextStats.user.shift_start_time;
+
+          if (Math.abs(timerSeconds - serverSec) > 5) {
+            setTimerSeconds(serverSec);
+          }
+          if (timerPaused !== serverPaused) {
+            setTimerPaused(serverPaused);
+          }
+          if (shiftStartTime !== serverStartTime) {
+            setShiftStartTime(serverStartTime);
           }
         }
       }
@@ -2125,6 +2170,9 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
 
                   <button
                     onClick={() => {
+                      const nextPaused = !timerPaused;
+                      let nextStartTime = shiftStartTime;
+
                       if (timerPaused) {
                         if (!isWithinShiftHours()) {
                           setMessage({ text: `Cannot start shift: You are outside your scheduled ${localUser?.shift || 'Morning'} shift hours.`, type: 'error' });
@@ -2132,11 +2180,12 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
                         }
                         if (timerSeconds === 0) {
                           const now = new Date();
-                          const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
-                          setShiftStartTime(timeStr);
+                          nextStartTime = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+                          setShiftStartTime(nextStartTime);
                         }
                       }
-                      setTimerPaused(!timerPaused);
+                      setTimerPaused(nextPaused);
+                      saveShiftTimerToServer(timerSeconds, nextPaused, nextStartTime);
                     }}
                     className="mt-4 md:mt-0 px-5 py-2 rounded-xl bg-white/15 text-white hover:bg-white/20 transition-all font-black text-xs flex items-center gap-2 w-full md:w-auto justify-center select-none"
                   >

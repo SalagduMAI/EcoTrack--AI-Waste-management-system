@@ -39,6 +39,9 @@ class User extends Authenticatable
         'notes',
         'language',
         'assigned_blocks',
+        'shift_timer_seconds',
+        'shift_timer_paused',
+        'shift_start_time',
     ];
 
     /**

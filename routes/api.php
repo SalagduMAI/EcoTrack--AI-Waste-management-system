@@ -87,6 +87,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/worker/tasks/{id}/verify-scan', [\App\Http\Controllers\WorkerController::class, 'scanVerifyAndDone']);
         Route::post('/worker/tasks/{id}/report-incident', [\App\Http\Controllers\WorkerController::class, 'reportIncident']);
         Route::get('/worker/history', [\App\Http\Controllers\WorkerController::class, 'collectionHistory']);
+        Route::post('/worker/shift-timer', [\App\Http\Controllers\WorkerController::class, 'updateShiftTimer']);
     });
 
     // ==========================================================================

@@ -602,6 +602,9 @@ class WorkerController extends Controller
                     'role' => $worker->role,
                     'shift' => $worker->shift,
                     'profile_photo_url' => $worker->profile_photo_url ?? ($worker->profile_photo_path ? '/storage/' . $worker->profile_photo_path : null),
+                    'shift_timer_seconds' => (int) $worker->shift_timer_seconds,
+                    'shift_timer_paused' => (bool) $worker->shift_timer_paused,
+                    'shift_start_time' => $worker->shift_start_time,
                 ]
             ]
         ]);
@@ -637,5 +640,35 @@ class WorkerController extends Controller
         }
         
         return $query->findOrFail($id);
+    }
+
+    /**
+     * Update shift timer settings for the authenticated worker.
+     */
+    public function updateShiftTimer(Request $request): JsonResponse
+    {
+        $worker = $request->user();
+        
+        $request->validate([
+            'shift_timer_seconds' => 'nullable|integer|min:0',
+            'shift_timer_paused' => 'nullable|boolean',
+            'shift_start_time' => 'nullable|string',
+        ]);
+
+        $worker->update([
+            'shift_timer_seconds' => $request->input('shift_timer_seconds', 0),
+            'shift_timer_paused' => $request->has('shift_timer_paused') ? (bool) $request->input('shift_timer_paused') : true,
+            'shift_start_time' => $request->input('shift_start_time'),
+        ]);
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Shift timer state updated successfully',
+            'data' => [
+                'shift_timer_seconds' => (int) $worker->shift_timer_seconds,
+                'shift_timer_paused' => (bool) $worker->shift_timer_paused,
+                'shift_start_time' => $worker->shift_start_time,
+            ]
+        ]);
     }
 }
