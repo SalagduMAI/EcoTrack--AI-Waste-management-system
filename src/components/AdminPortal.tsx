@@ -90,6 +90,27 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
   const [jobs, setJobs] = useState<any[]>([]);
   const [jobsSubView, setJobsSubView] = useState<'list' | 'calendar'>('list');
   const [selectedJobId, setSelectedJobId] = useState<string | number | null>(null);
+  const [selectedJobDetails, setSelectedJobDetails] = useState<any | null>(null);
+
+  useEffect(() => {
+    if (!selectedJobId) {
+      setSelectedJobDetails(null);
+      return;
+    }
+    const headers = {
+      'Authorization': `Bearer ${token}`,
+      'Accept': 'application/json'
+    };
+    fetch(`/api/admin/jobs/${selectedJobId}`, { headers })
+      .then(res => res.json())
+      .then(data => {
+        if (data.status === 'success' && data.data) {
+          setSelectedJobDetails(data.data);
+        }
+      })
+      .catch(err => console.error("Failed to load job details:", err));
+  }, [selectedJobId, token]);
+
   const [jobsFilterTab, setJobsFilterTab] = useState<'all' | 'pending' | 'in_progress' | 'done' | 'issue'>('all');
   const [selectedCalendarMonth, setSelectedCalendarMonth] = useState<string>(() => {
     const now = new Date();
@@ -5604,7 +5625,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
             {/* 1. JOB DETAIL VIEW (Screenshot 1) */}
             {selectedJobId ? (
               (() => {
-                const job = jobs.find(j => j.id === selectedJobId);
+                const job = selectedJobDetails || jobs.find(j => j.id === selectedJobId);
                 if (!job) {
                   return (
                     <div className="bg-white p-8 rounded-3xl border border-gray-100 text-center">
@@ -5619,6 +5640,42 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                     </div>
                   );
                 }
+
+                // Dynamically compile timeline from audits
+                const auditsTimeline = (job.audits || []).map((audit: any) => {
+                  let title = '';
+                  let type = 'info';
+                  if (audit.action === 'STATUS_MARKED_IN_PROGRESS') {
+                    title = 'Job marked In-Progress';
+                    type = 'in_progress';
+                  } else if (audit.action === 'QR_SCANNED_OK') {
+                    title = 'QR code scanned successfully';
+                    type = 'scan';
+                  } else if (audit.action === 'STATUS_MARKED_DONE') {
+                    title = 'Job completed';
+                    type = 'done';
+                  } else if (audit.action === 'INCIDENT_REPORTED') {
+                    title = `Issue reported: ${audit.issue_reason || 'Failed'}`;
+                    type = 'issue';
+                  } else {
+                    title = audit.action.replace(/_/g, ' ');
+                  }
+
+                  return {
+                    title: `${title} by ${audit.worker?.name || 'Worker'}`,
+                    time: formatLocalDateTimeString(audit.timed_at || audit.created_at),
+                    type
+                  };
+                });
+
+                const timelinePoints = [
+                  { 
+                    title: 'Job created', 
+                    time: formatLocalDateTimeString(job.created_at || job.scheduled_date), 
+                    type: 'created' 
+                  },
+                  ...auditsTimeline
+                ];
 
                 return (
                   <div className="space-y-6 animate-fade-in" id="job-detail-viewport">
@@ -5671,17 +5728,17 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                         <div className="grid grid-cols-2 md:grid-cols-3 gap-y-6 gap-x-4 py-6 border-y border-gray-100">
                           <div>
                             <span className="text-[9.5px] text-gray-400 font-extrabold uppercase tracking-wider block mb-1">BLOCK / FLOOR</span>
-                            <p className="text-sm font-black text-emerald-800">{job.block?.name || 'Block B'} / Floor {job.floor?.floor_number || 3}</p>
+                            <p className="text-sm font-black text-emerald-800">{job.block?.name || 'N/A'} / Floor {job.floor?.floor_number ?? 'N/A'}</p>
                           </div>
 
                           <div>
                             <span className="text-[9.5px] text-gray-400 font-extrabold uppercase tracking-wider block mb-1">UNIT</span>
-                            <p className="text-sm font-black text-gray-900">{job.unit?.unit_number || 'B-304'}</p>
+                            <p className="text-sm font-black text-gray-900">{job.unit?.unit_number || 'N/A'}</p>
                           </div>
 
                           <div>
                             <span className="text-[9.5px] text-gray-400 font-extrabold uppercase tracking-wider block mb-1">WORKER</span>
-                            <p className="text-sm font-black text-[#164121]">{job.worker?.name || 'Nimal Perera'}</p>
+                            <p className="text-sm font-black text-[#164121]">{job.worker?.name || 'Unassigned'}</p>
                           </div>
 
                           <div>
@@ -5696,7 +5753,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
 
                           <div>
                             <span className="text-[9.5px] text-gray-400 font-extrabold uppercase tracking-wider block mb-1">RECURRING</span>
-                            <p className="text-sm font-bold text-gray-600">{job.recurring || 'Mon, Wed, Fri'}</p>
+                            <p className="text-sm font-bold text-gray-600">{job.recurring === 'Weekly' ? 'Weekly (Same Day)' : 'One-time (None)'}</p>
                           </div>
                         </div>
 
@@ -5705,44 +5762,32 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                           <h3 className="text-base font-black text-[#164121] tracking-tight">Status timeline</h3>
                           
                           <div className="relative pl-7 border-l-2 border-gray-100 space-y-6 ml-2.5">
-                            {job.timeline && job.timeline.length > 0 ? (
-                              job.timeline.map((point: any, idx: number) => {
-                                let iconBg = 'bg-gray-100 text-gray-500';
-                                if (point.type === 'created') iconBg = 'bg-emerald-50 text-emerald-700';
-                                if (point.type === 'scan') iconBg = 'bg-slate-100 text-[#164121]';
-                                if (point.type === 'in_progress') iconBg = 'bg-blue-50 text-blue-700';
-                                if (point.type === 'issue') iconBg = 'bg-rose-50 text-rose-700';
-                                if (point.type === 'done') iconBg = 'bg-emerald-500/10 text-[#2E7D32]';
+                            {timelinePoints.map((point: any, idx: number) => {
+                              let iconBg = 'bg-gray-100 text-gray-500';
+                              if (point.type === 'created') iconBg = 'bg-emerald-50 text-emerald-700';
+                              if (point.type === 'scan') iconBg = 'bg-slate-100 text-[#164121]';
+                              if (point.type === 'in_progress') iconBg = 'bg-blue-50 text-blue-700';
+                              if (point.type === 'issue') iconBg = 'bg-rose-50 text-rose-700';
+                              if (point.type === 'done') iconBg = 'bg-emerald-500/10 text-[#2E7D32]';
 
-                                return (
-                                  <div key={idx} className="relative">
-                                    {/* Timeline Marker Point */}
-                                    <div className={`absolute -left-[39px] top-1/2 -translate-y-1/2 w-7 h-7 rounded-full ${iconBg} border-2 border-white flex items-center justify-center shadow-sm`}>
-                                      {point.type === 'created' && <CheckCircle className="w-3.5 h-3.5" />}
-                                      {point.type === 'scan' && <QrCode className="w-3.5 h-3.5" />}
-                                      {point.type === 'in_progress' && <Sliders className="w-3.5 h-3.5" />}
-                                      {point.type === 'issue' && <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />}
-                                      {point.type === 'done' && <Check className="w-3.5 h-3.5 text-emerald-700" />}
-                                    </div>
-
-                                    <div>
-                                      <p className="text-xs font-black text-gray-800">{point.title}</p>
-                                      <span className="text-[10px] text-gray-400 font-bold block mt-0.5">{point.time}</span>
-                                    </div>
+                              return (
+                                <div key={idx} className="relative flex items-center gap-3">
+                                  {/* Timeline Marker Point */}
+                                  <div className={`absolute -left-[39px] top-1/2 -translate-y-1/2 w-7 h-7 rounded-full ${iconBg} border-2 border-white flex items-center justify-center shadow-sm`}>
+                                    {point.type === 'created' && <CheckCircle className="w-3.5 h-3.5" />}
+                                    {point.type === 'scan' && <QrCode className="w-3.5 h-3.5" />}
+                                    {point.type === 'in_progress' && <Sliders className="w-3.5 h-3.5" />}
+                                    {point.type === 'issue' && <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />}
+                                    {point.type === 'done' && <Check className="w-3.5 h-3.5 text-emerald-700" />}
                                   </div>
-                                );
-                              })
-                            ) : (
-                              <div className="relative">
-                                <div className="absolute -left-[39px] top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-emerald-50 text-emerald-700 border-2 border-white flex items-center justify-center shadow-sm">
-                                  <CheckCircle className="w-3.5 h-3.5" />
+
+                                  <div>
+                                    <p className="text-xs font-black text-gray-800">{point.title}</p>
+                                    <span className="text-[10px] text-gray-400 font-bold block mt-0.5">{point.time}</span>
+                                  </div>
                                 </div>
-                                <div>
-                                  <p className="text-xs font-black text-gray-800">Job created by Amantha S.</p>
-                                  <span className="text-[10px] text-gray-400 font-bold block mt-0.5">{formatLocalDateTimeString(job.created_at || job.scheduled_date)}</span>
-                                </div>
-                              </div>
-                            )}
+                              );
+                            })}
                           </div>
                         </div>
 
@@ -5754,26 +5799,37 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                         {/* Incident ticket / photo */}
                         <div className="bg-white border border-gray-100 rounded-3xl p-6 shadow-sm space-y-4">
                           <div className="space-y-1">
-                            <h3 className="text-sm font-black text-[#164121] tracking-tight">Incident photo</h3>
+                            <h3 className="text-sm font-black text-[#164121] tracking-tight">Verification photo</h3>
                             <p className="text-[10px] text-gray-400 font-bold">Submitted by worker</p>
                           </div>
 
-                          {/* Camera placeholder box */}
-                          <div className="w-full h-44 bg-[#E8F5E9]/50 border-2 border-dashed border-emerald-200 rounded-2xl flex flex-col justify-center items-center gap-1.5 p-4 text-center">
-                            <div className="p-3 bg-[#E8F5E9] text-[#2E7D32] rounded-full">
-                              <QrCode className="w-6 h-6" />
+                          {job.incident_photo_path ? (
+                            <img 
+                              src={`/storage/${job.incident_photo_path}`} 
+                              alt="Verification Signature" 
+                              className="w-full h-44 object-cover rounded-2xl border border-gray-150 shadow-inner"
+                              referrerPolicy="no-referrer"
+                            />
+                          ) : (
+                            <div className="w-full h-44 bg-[#E8F5E9]/50 border-2 border-dashed border-emerald-200 rounded-2xl flex flex-col justify-center items-center gap-1.5 p-4 text-center">
+                              <div className="p-3 bg-[#E8F5E9] text-[#2E7D32] rounded-full">
+                                <QrCode className="w-6 h-6" />
+                              </div>
+                              <span className="text-[10px] text-emerald-800 font-extrabold tracking-wide uppercase">Geolinked QR presence logged</span>
                             </div>
-                            <span className="text-[10px] text-emerald-800 font-extrabold tracking-wide uppercase">Geolinked QR presence logged</span>
-                          </div>
+                          )}
 
-                          {/* Reason details */}
-                          <div className="p-4 bg-amber-50/50 border border-amber-100 rounded-2xl space-y-1.5">
-                            <span className="text-[9px] text-amber-800 font-extrabold uppercase tracking-wider block">REASON</span>
-                            <strong className="text-amber-900 text-xs font-black block">{job.issue_reason || 'Door locked – no response'}</strong>
-                            <p className="text-[10.5px] text-amber-800 font-semibold italic leading-normal">
-                              "{job.issue_detail || 'Knocked twice, no answer. Will retry on next round.'}"
-                            </p>
-                          </div>
+                          {job.status === 'issue' && (
+                            <div className="p-4 bg-amber-50/50 border border-amber-100 rounded-2xl space-y-1.5">
+                              <span className="text-[9px] text-amber-800 font-extrabold uppercase tracking-wider block">REASON</span>
+                              <strong className="text-amber-900 text-xs font-black block">{job.issue_reason || 'No response'}</strong>
+                              {job.issue_detail && (
+                                <p className="text-[10.5px] text-amber-800 font-semibold italic leading-normal">
+                                  "{job.issue_detail}"
+                                </p>
+                              )}
+                            </div>
+                          )}
                         </div>
 
                         {/* General operations sidebar cards */}
@@ -5783,19 +5839,50 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                           {/* Reschedule Button */}
                           <button
                             type="button"
-                            onClick={() => {
-                              // Dynamically update this job's scheduled date in real time
-                              const nextDay = '2026-05-11';
-                              setJobs(prev => prev.map(j => j.id === job.id ? { 
-                                ...j, 
-                                scheduled_date: nextDay,
-                                status: 'pending',
-                                timeline: [
-                                  ...(j.timeline || []),
-                                  { title: 'Job rescheduled to ' + nextDay + ' by Amantha S.', time: '2026-05-20, Just Now', type: 'created' }
-                                ]
-                              } : j));
-                              setFeedbackMessage(`Rescheduled Job #${job.id} to May 11, 2026 successfully.`);
+                            onClick={async () => {
+                              const newDate = prompt("Enter new scheduled date (YYYY-MM-DD):", job.scheduled_date);
+                              if (!newDate) return;
+
+                              setActionLoading(true);
+                              try {
+                                const headers = {
+                                  'Authorization': `Bearer ${token}`,
+                                  'Accept': 'application/json',
+                                  'Content-Type': 'application/json'
+                                };
+                                const res = await fetch(`/api/admin/jobs/${job.id}`, {
+                                  method: 'PUT',
+                                  headers,
+                                  body: JSON.stringify({
+                                    scheduled_date: newDate,
+                                    status: 'pending'
+                                  })
+                                });
+                                const data = await res.json().catch(() => null);
+                                if (res.ok && data?.status === 'success') {
+                                  setJobs(prev => prev.map(j => j.id === job.id ? { 
+                                    ...j, 
+                                    scheduled_date: newDate,
+                                    status: 'pending'
+                                  } : j));
+                                  if (selectedJobDetails && selectedJobDetails.id === job.id) {
+                                    setSelectedJobDetails({
+                                      ...selectedJobDetails,
+                                      scheduled_date: newDate,
+                                      status: 'pending'
+                                    });
+                                  }
+                                  setFeedbackMessage(`Rescheduled Job #${job.id} to ${newDate} successfully.`);
+                                  await loadAdminMetrics();
+                                } else {
+                                  alert(data?.message || "Failed to reschedule job.");
+                                }
+                              } catch (err: any) {
+                                console.error("Reschedule Catch Error:", err);
+                                alert("Failed to reschedule job.");
+                              } finally {
+                                setActionLoading(false);
+                              }
                             }}
                             className="w-full bg-[#2E7D32] hover:bg-[#1E562F] text-white py-3.5 px-4 rounded-xl font-bold flex justify-center items-center gap-2 transition-all text-xs shadow-sm cursor-pointer"
                           >
@@ -5818,7 +5905,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                               }
                               setContactMessage(defaultMsg);
                             }}
-                            className="w-full bg-white hover:bg-slate-50 border border-gray-200 text-[#164121] py-3 px-4 text-[#164121] rounded-xl font-bold flex justify-center items-center gap-2 transition-all text-xs cursor-pointer"
+                            className="w-full bg-white hover:bg-slate-50 border border-gray-200 text-[#164121] py-3 px-4 rounded-xl font-bold flex justify-center items-center gap-2 transition-all text-xs cursor-pointer"
                           >
                             <MessageSquare className="w-4 h-4 text-emerald-800 shrink-0" />
                             <span>Contact resident</span>
@@ -6586,7 +6673,8 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                                   unit_number: unitStr,
                                   worker: chosenWorker.name || '',
                                   shift: createJobForm.shift,
-                                  date: createJobForm.date
+                                  date: createJobForm.date,
+                                  recurring: createJobForm.repeatWeekly ? 'Weekly' : 'None'
                                 };
 
                                 const res = await fetch('/api/admin/jobs', {

@@ -24,6 +24,7 @@ class Job extends Model
         'incident_photo_path',
         'scanned_at',
         'completed_at',
+        'recurring',
     ];
 
     protected $casts = [

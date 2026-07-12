@@ -179,6 +179,7 @@ class JobController extends Controller
             'scheduled_date' => $scheduledDate,
             'shift' => $shift,
             'status' => 'pending',
+            'recurring' => $request->input('recurring'),
         ]);
 
         // Dispatch worker notification
