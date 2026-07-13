@@ -4565,40 +4565,54 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                     <h3 className="text-base font-black text-gray-900 tracking-tight">Jobs per day</h3>
                     <p className="text-[10px] text-gray-400 font-bold uppercase mt-1">Last 7 days</p>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className="w-3 h-3 rounded-full bg-[#2E7D32]"></span>
-                    <span className="text-xs text-gray-500 font-bold">Completed</span>
+                  <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-full bg-[#2E7D32]"></span>
+                      <span className="text-[11px] text-gray-500 font-bold">Completed</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-full bg-[#C8E6C9]"></span>
+                      <span className="text-[11px] text-gray-500 font-bold">Scheduled</span>
+                    </div>
                   </div>
                 </div>
 
                 {/* Vertical Chart Bars representing double stack heights precisely */}
                 <div className="flex items-end justify-between gap-2.5 pt-8 pb-3 px-2 border-b border-gray-100 min-h-[280px]">
-                  {jobBars.map((bar, idx) => (
-                    <div key={idx} className="flex-grow flex flex-col items-center group relative cursor-pointer">
-                      
-                      {/* Interactive Hover Value Tip */}
-                      <div className="absolute bottom-full mb-2 opacity-0 group-hover:opacity-100 transition-opacity bg-slate-900 text-white text-[10px] py-1.5 px-2.5 rounded-lg pointer-events-none z-10 shadow-md font-mono text-center min-w-[75px]">
-                        <strong className="block text-emerald-400 font-black">{bar.completed} Done</strong>
-                        <span className="text-gray-400 text-[9px]">{bar.total} Total Jobs</span>
-                      </div>
-
-                      {/* Stacked Graphic Bar */}
-                      <div className="w-8 sm:w-11 rounded-t-xl overflow-hidden bg-gray-100 relative h-[220px] flex flex-col justify-end">
-                        {/* Secondary background stack (Total jobs) */}
-                        <div 
-                          className="w-full bg-[#E8F5E9] hover:bg-emerald-100 transition-all relative overflow-hidden" 
-                          style={{ height: `${bar.heightTotalPx}px` }}
-                        >
-                          <div 
-                            className="absolute bottom-0 left-0 right-0 bg-[#2E7D32] hover:bg-[#1E562F] transition-all rounded-t-lg shadow-inner" 
-                            style={{ height: `${bar.heightCompletedPx}px` }}
-                          />
+                  {jobBars.map((bar, idx) => {
+                    const totalPercent = maxDayTotal > 0 ? (bar.total / maxDayTotal) * 100 : 0;
+                    const completedPercent = bar.total > 0 ? (bar.completed / bar.total) * 100 : 0;
+                    
+                    return (
+                      <div key={idx} className="flex-grow flex flex-col items-center group relative cursor-pointer">
+                        
+                        {/* Interactive Hover Value Tip */}
+                        <div className="absolute bottom-full mb-2 opacity-0 group-hover:opacity-100 transition-opacity bg-slate-900 text-white text-[10px] py-1.5 px-2.5 rounded-lg pointer-events-none z-10 shadow-md font-mono text-center min-w-[75px]">
+                          <strong className="block text-emerald-400 font-black">{bar.completed} Done</strong>
+                          <span className="text-gray-400 text-[9px]">{bar.total} Total Jobs</span>
                         </div>
-                      </div>
 
-                      <span className="text-[11px] text-gray-400 font-bold mt-4 tracking-tighter uppercase">{bar.label}</span>
-                    </div>
-                  ))}
+                        {/* Stacked Graphic Bar */}
+                        <div className="w-5 sm:w-7 h-[200px] bg-gray-100/60 rounded-full flex flex-col justify-end overflow-hidden">
+                          {bar.total > 0 && (
+                            <div 
+                              className="w-full bg-[#C8E6C9] hover:bg-[#A5D6A7] transition-all duration-300 relative flex flex-col justify-end rounded-t-full" 
+                              style={{ height: `${totalPercent}%` }}
+                            >
+                              {bar.completed > 0 && (
+                                <div 
+                                  className="w-full bg-[#2E7D32] hover:bg-[#1B5E20] transition-all duration-300 rounded-b-full rounded-t-full shadow-inner" 
+                                  style={{ height: `${completedPercent}%` }}
+                                />
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        <span className="text-[11px] text-gray-400 font-bold mt-4 tracking-tighter uppercase">{bar.label}</span>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
 
