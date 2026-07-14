@@ -356,6 +356,17 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
     'https://images.unsplash.com/photo-1518156677180-95a2893f3e9f?q=80&w=150&auto=format&fit=crop'
   ]);
 
+  const formatTimeOnly = (dateTimeStr: string | null) => {
+    if (!dateTimeStr) return '';
+    if (dateTimeStr.includes('T') || dateTimeStr.includes('-')) {
+      const d = new Date(dateTimeStr);
+      if (!isNaN(d.getTime())) {
+        return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+      }
+    }
+    return dateTimeStr;
+  };
+
   // Time Tracker State (matches "01:14:32" in UI of screenshot and increments)
   const isWithinShiftHours = () => {
     const userObj = localUser || { name: 'Sunil Kumara', phone: '+94 77 123 4567', email: 'sunil.k@ecotrack.lk', shift: 'Morning' };
@@ -2212,7 +2223,7 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
                         }
                         if (timerSeconds === 0) {
                           const now = new Date();
-                          nextStartTime = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+                          nextStartTime = now.toISOString();
                           setShiftStartTime(nextStartTime);
                         }
                       }
@@ -2351,7 +2362,7 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
                             {shiftStartTime ? 'D' : '⏱'}
                           </div>
                           <span className="font-bold text-gray-400 font-mono w-10 text-left">
-                            {shiftStartTime || 
+                            {formatTimeOnly(shiftStartTime) || 
                              ((localUser?.shift?.toLowerCase() || '').includes('evening') ? '14:00' : 
                               (localUser?.shift?.toLowerCase() || '').includes('night') ? '20:00' : '08:00')}
                           </span>
