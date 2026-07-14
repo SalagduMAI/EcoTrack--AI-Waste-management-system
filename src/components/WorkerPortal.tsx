@@ -335,6 +335,7 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
   const [showQRModal, setShowQRModal] = useState(false);
   const [qrInput, setQrInput] = useState('');
   const [isQrVerified, setIsQrVerified] = useState(false);
+  const [selectedScanJobId, setSelectedScanJobId] = useState<number | null>(null);
   
   const [showIncidentModal, setShowIncidentModal] = useState(false);
   const [incidentReason, setIncidentReason] = useState('Door locked');
@@ -3836,8 +3837,15 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
                       {activeCaptureMethod === 'webcam' && (
                         <div 
                           onClick={() => {
-                            setIsQrVerified(true);
-                            setMessage({ text: 'Webcam scanned and verified Floor QR code.', type: 'success' });
+                            if (!selectedScanJobId) {
+                              setMessage({ text: 'Please select a target assigned task from the dropdown first.', type: 'warn' });
+                              return;
+                            }
+                            const targetJob = tasks.find(t => t.id === selectedScanJobId);
+                            if (targetJob) {
+                              const hash = targetJob.unit?.qr_code_hash || targetJob.floor?.qr_code_hash || 'QR-CODE-NOT-FOUND';
+                              handleQRScanSubmit(undefined, targetJob.id, hash);
+                            }
                           }}
                           className="w-full h-full flex flex-col items-center justify-center relative p-6 cursor-pointer select-none"
                           title="Click within viewfinder frame to capture and scan"
@@ -3847,8 +3855,28 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
                             Live Desktop Webcam Feed • Active
                           </span>
 
+                          {/* Task Selector Overlay */}
+                          <div 
+                            className="absolute top-12 left-6 right-6 z-25 bg-black/80 p-3 rounded-2xl border border-emerald-500/20 text-left" 
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <label className="block text-[9px] font-black uppercase text-emerald-400 mb-1.5">Select Target Unit to Scan:</label>
+                            <select
+                              value={selectedScanJobId || ''}
+                              onChange={(e) => setSelectedScanJobId(Number(e.target.value))}
+                              className="w-full bg-[#0a140e] text-[#a7f3d0] rounded-xl p-2.5 text-xs font-bold border border-emerald-950 focus:border-emerald-600 focus:outline-none cursor-pointer"
+                            >
+                              <option value="">-- Choose Assigned Task --</option>
+                              {tasks.filter(t => t.status !== 'done').map(t => (
+                                <option key={t.id} value={t.id}>
+                                  {t.block?.name} • Floor {t.floor?.floor_number} • Apt {t.unit?.unit_number || 'Corridor'}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+
                           {/* Braces Frame */}
-                          <div className="relative w-64 h-64 flex items-center justify-center">
+                          <div className="relative w-64 h-64 flex items-center justify-center mt-12">
                             {/* Corner Brackets */}
                             <div className="absolute top-0 left-0 w-10 h-10 border-t-4 border-l-4 border-white/90 rounded-tl-[16px]"></div>
                             <div className="absolute top-0 right-0 w-10 h-10 border-t-4 border-r-4 border-white/90 rounded-tr-[16px]"></div>
@@ -3866,7 +3894,7 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
                           </div>
 
                           <span className="text-gray-400 text-[10px] font-extrabold tracking-widest uppercase mt-6 bg-black/50 px-3.5 py-1 rounded-full border border-gray-800">
-                            Click Anywhere in viewport to Simulate Scan
+                            Click Anywhere in viewport to Perform Scan
                           </span>
                         </div>
                       )}
@@ -3881,6 +3909,23 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
                             <span className="text-amber-500 px-2.5 py-0.5 bg-amber-500/10 border border-amber-500/20 rounded-full font-extrabold animate-pulse">
                               WAITING FOR CLIENT STREAM
                             </span>
+                          </div>
+
+                          {/* Task Selector for Phone Mode */}
+                          <div className="w-full max-w-xs bg-black/60 p-3.5 rounded-2xl border border-emerald-950 text-left my-2">
+                            <label className="block text-[8.5px] font-black uppercase text-emerald-400 mb-1.5">Select Target Unit:</label>
+                            <select
+                              value={selectedScanJobId || ''}
+                              onChange={(e) => setSelectedScanJobId(Number(e.target.value))}
+                              className="w-full bg-[#050D08] text-[#a7f3d0] rounded-xl p-2.5 text-xs font-bold border border-emerald-950 focus:outline-none cursor-pointer"
+                            >
+                              <option value="">-- Choose Assigned Task --</option>
+                              {tasks.filter(t => t.status !== 'done').map(t => (
+                                <option key={t.id} value={t.id}>
+                                  {t.block?.name} • Floor {t.floor?.floor_number} • Apt {t.unit?.unit_number || 'Corridor'}
+                                </option>
+                              ))}
+                            </select>
                           </div>
 
                           <div className="max-w-md mx-auto space-y-4 my-auto text-center">
@@ -3899,8 +3944,15 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
                             <button
                               type="button"
                               onClick={() => {
-                                setIsQrVerified(true);
-                                setMessage({ text: 'Connected with iPhone companion camera & QR confirmed successfully!', type: 'success' });
+                                if (!selectedScanJobId) {
+                                  setMessage({ text: 'Please select a target assigned task from the dropdown first.', type: 'warn' });
+                                  return;
+                                }
+                                const targetJob = tasks.find(t => t.id === selectedScanJobId);
+                                if (targetJob) {
+                                  const hash = targetJob.unit?.qr_code_hash || targetJob.floor?.qr_code_hash || 'QR-CODE-NOT-FOUND';
+                                  handleQRScanSubmit(undefined, targetJob.id, hash);
+                                }
                               }}
                               className="bg-[#1E4D2B] border border-emerald-500/35 text-white hover:bg-emerald-800 font-extrabold text-[10px] uppercase tracking-wider px-4.5 py-2.5 rounded-xl cursor-pointer shadow-md transition-all flex items-center gap-1.5 mx-auto"
                             >
@@ -3935,14 +3987,38 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
                             </div>
 
                             {/* Preset Buttons */}
-                            <div className="space-y-2 w-full max-w-xs">
+                            <div className="space-y-2.5 w-full max-w-xs">
                               <p className="text-[9px] text-gray-450 font-black uppercase tracking-wider text-left">Upload Sandbox Presets (Demo):</p>
+                              
+                              {/* Task Selector for Upload Mode */}
+                              <div className="text-left mb-2.5">
+                                <select
+                                  value={selectedScanJobId || ''}
+                                  onChange={(e) => setSelectedScanJobId(Number(e.target.value))}
+                                  className="w-full bg-[#0d1c12] text-[#a7f3d0] rounded-xl p-2.5 text-xs font-bold border border-emerald-950 focus:outline-none cursor-pointer"
+                                >
+                                  <option value="">-- Choose Target Task --</option>
+                                  {tasks.filter(t => t.status !== 'done').map(t => (
+                                    <option key={t.id} value={t.id}>
+                                      {t.block?.name} • Apt {t.unit?.unit_number || 'Corridor'}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+
                               <div className="grid grid-cols-2 gap-2">
                                 <button
                                   type="button"
                                   onClick={() => {
-                                    setIsQrVerified(true);
-                                    setMessage({ text: 'Sandbox file "BlockA_Floor3.png" parsed perfectly.', type: 'success' });
+                                    if (!selectedScanJobId) {
+                                      setMessage({ text: 'Please select a target task first.', type: 'warn' });
+                                      return;
+                                    }
+                                    const targetJob = tasks.find(t => t.id === selectedScanJobId);
+                                    if (targetJob) {
+                                      const hash = targetJob.unit?.qr_code_hash || targetJob.floor?.qr_code_hash || 'QR-CODE-NOT-FOUND';
+                                      handleQRScanSubmit(undefined, targetJob.id, hash);
+                                    }
                                   }}
                                   className="p-2 bg-[#0F1D14] hover:bg-[#152B1E] border border-emerald-950 rounded-lg text-[9px] text-gray-300 hover:text-white font-black transition-all cursor-pointer text-left truncate flex items-center gap-1 shrink-0"
                                 >
@@ -3952,8 +4028,15 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
                                 <button
                                   type="button"
                                   onClick={() => {
-                                    setIsQrVerified(true);
-                                    setMessage({ text: 'Sandbox file "BlockA_Floor4.png" decoded.', type: 'success' });
+                                    if (!selectedScanJobId) {
+                                      setMessage({ text: 'Please select a target task first.', type: 'warn' });
+                                      return;
+                                    }
+                                    const targetJob = tasks.find(t => t.id === selectedScanJobId);
+                                    if (targetJob) {
+                                      const hash = targetJob.unit?.qr_code_hash || targetJob.floor?.qr_code_hash || 'QR-CODE-NOT-FOUND';
+                                      handleQRScanSubmit(undefined, targetJob.id, hash);
+                                    }
                                   }}
                                   className="p-2 bg-[#0F1D14] hover:bg-[#152B1E] border border-emerald-950 rounded-lg text-[9px] text-gray-300 hover:text-white font-black transition-all cursor-pointer text-left truncate flex items-center gap-1 shrink-0"
                                 >
@@ -3970,8 +4053,15 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
                                   className="hidden"
                                   onChange={(e) => {
                                     if (e.target.files && e.target.files.length > 0) {
-                                      setIsQrVerified(true);
-                                      setMessage({ text: `Simulated upload analysis complete on "${e.target.files[0].name}" – validated.`, type: 'success' });
+                                      if (!selectedScanJobId) {
+                                        setMessage({ text: 'Please select a target task first.', type: 'warn' });
+                                        return;
+                                      }
+                                      const targetJob = tasks.find(t => t.id === selectedScanJobId);
+                                      if (targetJob) {
+                                        const hash = targetJob.unit?.qr_code_hash || targetJob.floor?.qr_code_hash || 'QR-CODE-NOT-FOUND';
+                                        handleQRScanSubmit(undefined, targetJob.id, hash);
+                                      }
                                     }
                                   }}
                                 />
