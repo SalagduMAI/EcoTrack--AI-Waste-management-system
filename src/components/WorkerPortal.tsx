@@ -4190,18 +4190,23 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
                     <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest block font-sans">Recent Scans</span>
                     
                     <div className="divide-y divide-gray-100">
-                      <div className="flex justify-between items-center py-2.5">
-                        <span className="text-xs font-black text-[#1E4D2B] font-mono select-all">A-301</span>
-                        <span className="text-[11px] font-bold text-gray-400">6:35 AM</span>
-                      </div>
-                      <div className="flex justify-between items-center py-2.5">
-                        <span className="text-xs font-black text-[#1E4D2B] font-mono select-all">A-302</span>
-                        <span className="text-[11px] font-bold text-gray-400">6:42 AM</span>
-                      </div>
-                      <div className="flex justify-between items-center py-2.5">
-                        <span className="text-xs font-black text-[#1E4D2B] font-mono select-all">A-303</span>
-                        <span className="text-[11px] font-bold text-gray-400">7:10 AM</span>
-                      </div>
+                      {history && history.length > 0 ? (
+                        history.slice(0, 5).map((h: any, idx: number) => {
+                          const timeStr = h.completed_at 
+                            ? new Date(h.completed_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })
+                            : 'Just now';
+                          return (
+                            <div key={h.id || idx} className="flex justify-between items-center py-2.5 animate-in fade-in duration-150">
+                              <span className="text-xs font-black text-[#1E4D2B] font-mono select-all">
+                                {h.unit?.unit_number || 'Floor Corridor'}
+                              </span>
+                              <span className="text-[11px] font-bold text-gray-400">{timeStr}</span>
+                            </div>
+                          );
+                        })
+                      ) : (
+                        <p className="text-[10px] text-gray-400 font-bold text-center py-4">No recent scans recorded.</p>
+                      )}
                     </div>
                   </div>
 
