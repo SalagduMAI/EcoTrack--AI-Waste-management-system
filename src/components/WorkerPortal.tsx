@@ -385,7 +385,17 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
 
   const [timerSeconds, setTimerSeconds] = useState(() => parseInt(localStorage.getItem('ecotrack_shift_timer_seconds') || '0', 10)); 
   const [timerPaused, setTimerPaused] = useState(() => localStorage.getItem('ecotrack_shift_timer_paused') === 'false' ? false : true);
-  const [shiftStartTime, setShiftStartTime] = useState<string | null>(() => localStorage.getItem('ecotrack_shift_start_time'));
+  const [shiftStartTime, setShiftStartTime] = useState<string | null>(() => {
+    const val = localStorage.getItem('ecotrack_shift_start_time');
+    // If it's the old format (time-only without date dashes or ISO 'T'), clean it up
+    if (val && !val.includes('T') && !val.includes('-')) {
+      localStorage.removeItem('ecotrack_shift_start_time');
+      localStorage.removeItem('ecotrack_shift_timer_seconds');
+      localStorage.setItem('ecotrack_shift_timer_paused', 'true');
+      return null;
+    }
+    return val;
+  });
 
   const timerSecondsRef = useRef(timerSeconds);
   const timerPausedRef = useRef(timerPaused);
