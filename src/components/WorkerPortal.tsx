@@ -473,6 +473,14 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
     let interval: any = null;
     if (!timerPaused) {
       if (isWithinShiftHours()) {
+        // Auto-heal missing shiftStartTime when timer is running
+        if (!shiftStartTime) {
+          const now = new Date();
+          const calculatedStartTime = new Date(now.getTime() - timerSeconds * 1000).toISOString();
+          setShiftStartTime(calculatedStartTime);
+          saveShiftTimerToServer(timerSeconds, false, calculatedStartTime);
+        }
+
         interval = setInterval(() => {
           setTimerSeconds(s => {
             const nextSec = s + 1;
@@ -2231,7 +2239,7 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
                           setMessage({ text: `Cannot start shift: You are outside your scheduled ${localUser?.shift || 'Morning'} shift hours.`, type: 'error' });
                           return;
                         }
-                        if (timerSeconds === 0) {
+                        if (!nextStartTime) {
                           const now = new Date();
                           nextStartTime = now.toISOString();
                           setShiftStartTime(nextStartTime);
