@@ -7639,9 +7639,9 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
           {/* TAB 6: FINANCIAL LEDGER & PAYMENTS TABLE (Payments tab) */}
           {activeTab === 'payments' && (() => {
             // Calculate statistics from real database payments
-            const totalCollectedAmount = payments.filter(p => p.status === 'paid').reduce((sum, p) => sum + p.amount, 0);
-            const totalOutstandingAmount = payments.filter(p => p.status === 'unpaid').reduce((sum, p) => sum + p.amount, 0);
-            const totalSpecialRequestAmount = payments.filter(p => p.payment_type === 'special_pickup').reduce((sum, p) => sum + p.amount, 0);
+            const totalCollectedAmount = payments.filter(p => p.status === 'paid').reduce((sum, p) => sum + Number(p.amount || 0), 0);
+            const totalOutstandingAmount = payments.filter(p => p.status === 'unpaid').reduce((sum, p) => sum + Number(p.amount || 0), 0);
+            const totalSpecialRequestAmount = payments.filter(p => p.payment_type === 'special_pickup').reduce((sum, p) => sum + Number(p.amount || 0), 0);
             const totalAmount = totalCollectedAmount + totalOutstandingAmount;
             const dynamicCollectionRate = totalAmount > 0 ? Math.round((totalCollectedAmount / totalAmount) * 100) : 0;
 
@@ -7649,7 +7649,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
             const displayPayments = payments.filter(p => {
               const query = searchQuery.trim().toLowerCase();
               const matchesSearch = !query ||
-                p.resident_name?.toLowerCase().includes(query) ||
+                p.resident?.name?.toLowerCase().includes(query) ||
                 p.unit?.unit_number?.toLowerCase().includes(query) ||
                 p.reference_code?.toLowerCase().includes(query) ||
                 p.notes?.toLowerCase().includes(query);
@@ -7757,7 +7757,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                     type="button"
                     onClick={() => {
                       const csvContent = "data:text/csv;charset=utf-8,Resident,Unit,Amount,Date,Method,Type,Status\n" +
-                        displayPayments.map(p => `"${p.resident_name || 'Resident'}","${p.unit?.unit_number || 'A-301'}","LKR ${p.amount}","${p.date || '2026-05-08'}","${p.method || '—'}","${p.payment_type?.replace('_', ' ')}","${p.status}"`).join("\n");
+                        displayPayments.map(p => `"${p.resident?.name || 'Resident'}","${p.unit?.unit_number || 'A-301'}","LKR ${p.amount}","${p.created_at ? p.created_at.split('T')[0] : '2026-05-08'}","${p.payment_method || '—'}","${p.payment_type?.replace('_', ' ')}","${p.status}"`).join("\n");
                       const encodedUri = encodeURI(csvContent);
                       const link = document.createElement("a");
                       link.setAttribute("href", encodedUri);
@@ -7803,9 +7803,9 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                           displayPayments.map((item) => {
                             const isPaid = item.status === 'paid';
                             // Create short nickname initials (e.g. Amantha Salgadu -> AS)
-                            const initials = item.resident_name
-                              ? item.resident_name.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()
-                              : 'AS';
+                            const initials = item.resident?.name
+                              ? item.resident.name.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()
+                              : 'RO';
 
                             return (
                               <tr key={item.id} className="hover:bg-[#F4F6F0]/25 transition-colors group">
@@ -7818,7 +7818,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                                     </div>
                                     <div>
                                       <span className="font-extrabold text-gray-950 block group-hover:text-[#2E7D32] transition-colors">
-                                        {item.resident_name || 'Resident Occupant'}
+                                        {item.resident?.name || 'Resident Occupant'}
                                       </span>
                                       <span className="text-[10px] text-gray-400 font-bold block mt-0.5">Reference ID: {item.reference_code}</span>
                                     </div>
@@ -7841,13 +7841,13 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
 
                                 {/* Date */}
                                 <td className="py-4 px-4 text-gray-400 font-bold text-[11px]">
-                                  {item.date?.split(',')[0] || '2026-05-08'}
+                                  {item.created_at ? item.created_at.split('T')[0] : '—'}
                                 </td>
 
                                 {/* Payment Method */}
                                 <td className="py-4 px-4">
                                   <span className="text-gray-500 font-semibold text-[11.5px]">
-                                    {item.method || '—'}
+                                    {item.payment_method || '—'}
                                   </span>
                                 </td>
 
