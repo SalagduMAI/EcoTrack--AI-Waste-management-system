@@ -417,6 +417,57 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
     }
   }, [timerSeconds, timerPaused, shiftStartTime]);
 
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
+
+  const stopCamera = () => {
+    if (cameraStream) {
+      cameraStream.getTracks().forEach(track => track.stop());
+      setCameraStream(null);
+    }
+  };
+
+  useEffect(() => {
+    let active = true;
+    let activeStream: MediaStream | null = null;
+
+    const startCamera = async () => {
+      if (activeTab === 'scan' && (activeCaptureMethod === 'webcam' || activeCaptureMethod === 'phone')) {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ 
+            video: { facingMode: activeCaptureMethod === 'phone' ? 'environment' : 'user' } 
+          });
+          if (active) {
+            activeStream = stream;
+            setCameraStream(stream);
+            if (videoRef.current) {
+              videoRef.current.srcObject = stream;
+            }
+          } else {
+            stream.getTracks().forEach(track => track.stop());
+          }
+        } catch (err) {
+          console.warn("Camera access denied or unavailable:", err);
+        }
+      }
+    };
+
+    startCamera();
+
+    return () => {
+      active = false;
+      if (activeStream) {
+        activeStream.getTracks().forEach(track => track.stop());
+      }
+    };
+  }, [activeTab, activeCaptureMethod]);
+
+  useEffect(() => {
+    if (activeTab !== 'scan') {
+      stopCamera();
+    }
+  }, [activeTab]);
+
   const saveShiftTimerToServer = async (seconds?: number, paused?: boolean, startTime?: string | null) => {
     if (!token) return;
 
@@ -3876,12 +3927,21 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
                           </div>
 
                           {/* Braces Frame */}
-                          <div className="relative w-64 h-64 flex items-center justify-center mt-12">
+                          <div className="relative w-64 h-64 flex items-center justify-center mt-12 overflow-hidden rounded-2xl">
+                            {/* Video stream element */}
+                            <video 
+                              ref={videoRef}
+                              autoPlay
+                              playsInline
+                              muted
+                              className="w-full h-full object-cover absolute inset-0 z-0 bg-[#0A160F]"
+                            />
+
                             {/* Corner Brackets */}
-                            <div className="absolute top-0 left-0 w-10 h-10 border-t-4 border-l-4 border-white/90 rounded-tl-[16px]"></div>
-                            <div className="absolute top-0 right-0 w-10 h-10 border-t-4 border-r-4 border-white/90 rounded-tr-[16px]"></div>
-                            <div className="absolute bottom-0 left-0 w-10 h-10 border-b-4 border-l-4 border-white/90 rounded-bl-[16px]"></div>
-                            <div className="absolute bottom-0 right-0 w-10 h-10 border-b-4 border-r-4 border-white/90 rounded-br-[16px]"></div>
+                            <div className="absolute top-0 left-0 w-10 h-10 border-t-4 border-l-4 border-white/90 rounded-tl-[16px] z-10"></div>
+                            <div className="absolute top-0 right-0 w-10 h-10 border-t-4 border-r-4 border-white/90 rounded-tr-[16px] z-10"></div>
+                            <div className="absolute bottom-0 left-0 w-10 h-10 border-b-4 border-l-4 border-white/90 rounded-bl-[16px] z-10"></div>
+                            <div className="absolute bottom-0 right-0 w-10 h-10 border-b-4 border-r-4 border-white/90 rounded-br-[16px] z-10"></div>
 
                             {/* Scanning Neon Green laser beam */}
                             <motion.div 
@@ -3890,7 +3950,9 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
                               transition={{ repeat: Infinity, duration: 2.5, ease: "easeInOut" }}
                             />
 
-                            <QrCode className="w-28 h-28 text-emerald-500/10 stroke-[1.25]" />
+                            {!cameraStream && (
+                              <QrCode className="w-28 h-28 text-emerald-500/10 stroke-[1.25] z-5" />
+                            )}
                           </div>
 
                           <span className="text-gray-400 text-[10px] font-extrabold tracking-widest uppercase mt-6 bg-black/50 px-3.5 py-1 rounded-full border border-gray-800">
@@ -3937,7 +3999,7 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
                             <div className="space-y-1">
                               <h4 className="text-xs font-black text-gray-200 uppercase tracking-wide">Smartphone QR Companion Pairing</h4>
                               <p className="text-[10px] text-gray-400/90 leading-relaxed max-w-xs mx-auto">
-                                Open Sunil's EcoTrack companion application, select companion mode and aim your smartphone camera at this screen to instantly stream verification.
+                                Open {localUser?.name || 'Kamal'}'s EcoTrack companion application, select companion mode and aim your smartphone camera at this screen to instantly stream verification.
                               </p>
                             </div>
 
@@ -3962,7 +4024,7 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
                           </div>
 
                           <div className="text-[9px] text-gray-650 font-black uppercase tracking-widest leading-none">
-                            PAIR CODE: ECO-SYNC-814-SUNIL
+                            PAIR CODE: ECO-SYNC-814-{(localUser?.name || 'Kamal').split(' ')[0].toUpperCase()}
                           </div>
                         </div>
                       )}
