@@ -418,9 +418,14 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
     }
   };
 
-  // Check if shift has changed or ended on load/mount
+  // Check if shift has changed, ended, or date has changed
   useEffect(() => {
-    if (!isWithinShiftHours()) {
+    const todayStr = new Date().toISOString().split('T')[0];
+    const shiftDateStr = shiftStartTime ? shiftStartTime.split('T')[0] : null;
+    const isDifferentDay = shiftDateStr && shiftDateStr !== todayStr;
+    const outsideHours = !isWithinShiftHours();
+
+    if (outsideHours || isDifferentDay) {
       localStorage.removeItem('ecotrack_shift_timer_seconds');
       localStorage.removeItem('ecotrack_shift_timer_paused');
       localStorage.removeItem('ecotrack_shift_start_time');
@@ -429,7 +434,7 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
       setShiftStartTime(null);
       saveShiftTimerToServer(0, true, null);
     }
-  }, [localUser?.shift]);
+  }, [localUser?.shift, shiftStartTime]);
 
   // Search filter query
   const [searchQuery, setSearchQuery] = useState('');
@@ -802,9 +807,13 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
             });
           }
 
-          const serverSec = parseInt(nextStats.user.shift_timer_seconds || '0', 10);
-          const serverPaused = nextStats.user.shift_timer_paused === true || nextStats.user.shift_timer_paused === 'true' || nextStats.user.shift_timer_paused === 1;
-          const serverStartTime = nextStats.user.shift_start_time;
+          const todayStr = new Date().toISOString().split('T')[0];
+          const rawServerStartTime = nextStats.user.shift_start_time;
+          const isServerDifferentDay = rawServerStartTime && rawServerStartTime.split('T')[0] !== todayStr;
+
+          const serverSec = isServerDifferentDay ? 0 : parseInt(nextStats.user.shift_timer_seconds || '0', 10);
+          const serverPaused = isServerDifferentDay ? true : (nextStats.user.shift_timer_paused === true || nextStats.user.shift_timer_paused === 'true' || nextStats.user.shift_timer_paused === 1);
+          const serverStartTime = isServerDifferentDay ? null : rawServerStartTime;
 
           const currentLocalSeconds = timerSecondsRef.current;
           const currentLocalPaused = timerPausedRef.current;
@@ -826,6 +835,9 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
 
           if (currentLocalStartTime !== serverStartTime) {
             setShiftStartTime(serverStartTime);
+            if (isServerDifferentDay) {
+              saveShiftTimerToServer(0, true, null);
+            }
           }
         }
       }
