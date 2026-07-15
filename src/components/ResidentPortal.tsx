@@ -2740,9 +2740,17 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
                               </td>
                               <td className="py-4.5 px-4">
                                 <div className="flex items-center gap-2">
-                                  <div className="w-6.5 h-6.5 rounded-full bg-emerald-100/90 text-[10.5px] font-black text-emerald-800 flex items-center justify-center tracking-tight select-none">
-                                    {item.code}
-                                  </div>
+                                  {item.workerPhoto ? (
+                                    <img 
+                                      src={item.workerPhoto} 
+                                      alt={item.worker} 
+                                      className="w-6.5 h-6.5 rounded-full object-cover border border-emerald-100/80 shrink-0 animate-fade-in" 
+                                    />
+                                  ) : (
+                                    <div className="w-6.5 h-6.5 rounded-full bg-emerald-100/90 text-[10.5px] font-black text-emerald-800 flex items-center justify-center tracking-tight select-none">
+                                      {item.code}
+                                    </div>
+                                  )}
                                   <span className="text-gray-900 font-bold">{item.worker}</span>
                                 </div>
                               </td>
