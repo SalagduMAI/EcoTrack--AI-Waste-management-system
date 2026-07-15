@@ -835,4 +835,130 @@ class AdminController extends Controller
             'data' => $workers
         ]);
     }
+
+    /**
+     * Unified Admin Data Endpoint to optimize connection pool usage.
+     */
+    public function allData(Request $request): JsonResponse
+    {
+        $today = $request->input('date') ?: \Carbon\Carbon::today()->format('Y-m-d');
+        
+        // 1. Dashboard data
+        $todayStatusCounts = \App\Models\Job::whereDate('scheduled_date', $today)
+            ->selectRaw('status, COUNT(*) as count')
+            ->groupBy('status')
+            ->pluck('count', 'status');
+
+        $completedToday = $todayStatusCounts->get('done', 0);
+        $inProgressToday = $todayStatusCounts->get('in_progress', 0);
+        $pendingToday = $todayStatusCounts->get('pending', 0);
+        $issuesToday = $todayStatusCounts->get('issue', 0);
+        $todayJobs = $completedToday + $inProgressToday + $pendingToday + $issuesToday;
+
+        $activeResidentsCount = User::where('role', 'resident')->where('status', 'active')->count();
+
+        $currentMonth = \Carbon\Carbon::now()->format('F Y');
+        $revenueCollected = Payment::where('billing_period', $currentMonth)
+            ->where('status', 'paid')
+            ->sum('amount');
+
+        $sevenDaysAgo = \Carbon\Carbon::today()->subDays(6)->format('Y-m-d');
+        $jobsGrouped = \App\Models\Job::whereDate('scheduled_date', '>=', $sevenDaysAgo)
+            ->whereDate('scheduled_date', '<=', \Carbon\Carbon::today()->format('Y-m-d'))
+            ->selectRaw('scheduled_date, status, COUNT(*) as count')
+            ->groupBy('scheduled_date', 'status')
+            ->get()
+            ->groupBy(function($item) {
+                return $item->scheduled_date instanceof \DateTime 
+                    ? $item->scheduled_date->format('Y-m-d') 
+                    : (string) $item->scheduled_date;
+            });
+
+        $jobsPerDay = [];
+        for ($i = 6; $i >= 0; $i--) {
+            $date = \Carbon\Carbon::today()->subDays($i)->format('Y-m-d');
+            $dayName = \Carbon\Carbon::today()->subDays($i)->format('D');
+            
+            $dayGroups = $jobsGrouped->get($date, collect());
+            $totalMatched = $dayGroups->sum('count');
+            $completedMatched = $dayGroups->where('status', 'done')->sum('count');
+            $issuesMatched = $dayGroups->where('status', 'issue')->sum('count');
+            
+            $jobsPerDay[] = [
+                'date' => $date,
+                'day' => $dayName,
+                'total' => $totalMatched,
+                'completed' => $completedMatched,
+                'issues' => $issuesMatched,
+            ];
+        }
+
+        // 2. Jobs list
+        $jobs = \App\Models\Job::with(['worker', 'block', 'floor', 'unit', 'rating'])
+            ->orderBy('scheduled_date', 'desc')
+            ->orderBy('id', 'desc')
+            ->get();
+
+        // 3. Payments list
+        $payments = Payment::with(['resident', 'unit'])
+            ->orderBy('created_at', 'desc')
+            ->get();
+
+        // 4. Complaints list
+        $complaints = Complaint::with(['resident', 'unit', 'job.worker'])
+            ->orderBy('created_at', 'desc')
+            ->get();
+
+        // 5. Blocks list
+        $blocks = \App\Models\Block::with(['floors.units.resident'])->get();
+
+        // 6. Users list
+        $users = User::with('units.floor.block')
+            ->orderBy('name', 'asc')
+            ->get();
+
+        // 7. Current User
+        $currentUser = $request->user();
+
+        return response()->json([
+            'status' => 'success',
+            'data' => [
+                'dashboard' => [
+                    'status' => 'success',
+                    'data' => [
+                        'today_jobs' => $todayJobs,
+                        'completed_today' => $completedToday,
+                        'issues_today' => $issuesToday,
+                        'revenue_collected' => (float)$revenueCollected,
+                        'active_residents' => $activeResidentsCount,
+                        'jobs_per_day' => $jobsPerDay,
+                    ]
+                ],
+                'jobs' => [
+                    'status' => 'success',
+                    'data' => $jobs
+                ],
+                'payments' => [
+                    'status' => 'success',
+                    'data' => $payments
+                ],
+                'complaints' => [
+                    'status' => 'success',
+                    'data' => $complaints
+                ],
+                'blocks' => [
+                    'status' => 'success',
+                    'data' => $blocks
+                ],
+                'users' => [
+                    'status' => 'success',
+                    'data' => $users
+                ],
+                'user' => [
+                    'status' => 'success',
+                    'data' => $currentUser
+                ]
+            ]
+        ]);
+    }
 }

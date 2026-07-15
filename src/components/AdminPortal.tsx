@@ -1101,17 +1101,6 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
       };
 
       const localDate = new Date().toLocaleDateString('sv-SE');
-      // Concurrent fetches, failing gracefully to local simulation
-      const [jobsRes, paymentsRes, complaintsRes, blocksRes, usersRes, userRes, dashboardRes] = await Promise.all([
-        fetch('/api/admin/jobs', { headers }).catch(() => null),
-        fetch('/api/admin/payments', { headers }).catch(() => null),
-        fetch('/api/admin/complaints', { headers }).catch(() => null),
-        fetch('/api/admin/blocks', { headers }).catch(() => null),
-        fetch('/api/admin/users', { headers }).catch(() => null),
-        fetch('/api/user', { headers }).catch(() => null),
-        fetch(`/api/admin/dashboard?date=${localDate}`, { headers }).catch(() => null),
-      ]);
-
       let jobsData = null;
       let paymentsData = null;
       let complaintsData = null;
@@ -1120,75 +1109,79 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
       let userData = null;
       let dashboardData = null;
 
-      try {
-        if (userRes && userRes.ok && userRes.headers.get('content-type')?.includes('application/json')) {
-          userData = await userRes.json();
-          if (userData && userData.data) {
-            const u = userData.data;
-            const nameParts = (u.name || 'Amantha Salgadu').split(' ');
-            const fName = nameParts[0] || 'Amantha';
-            const lName = nameParts.slice(1).join(' ') || 'Salgadu';
-            setSettingsProfile({
-              firstName: fName,
-              lastName: lName,
-              email: u.email || 'amanthasal@gmail.com',
-              role: u.role === 'admin' ? 'Scheme Manager' : u.role,
-              phone: u.phone || '+94 77 000 1122',
-              scheme: 'Greenfield Residencies',
-              avatarUrl: u.profile_photo_path ? `/storage/${u.profile_photo_path}` : 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=120&h=120&fit=crop&crop=faces&q=80'
-            });
+      // Try unified all-data API fetch first to conserve connection limits
+      const allDataRes = await fetch(`/api/admin/all-data?date=${localDate}`, { headers }).catch(() => null);
+      if (allDataRes && allDataRes.ok) {
+        try {
+          const allDataJson = await allDataRes.json();
+          if (allDataJson && allDataJson.status === 'success' && allDataJson.data) {
+            jobsData = allDataJson.data.jobs;
+            paymentsData = allDataJson.data.payments;
+            complaintsData = allDataJson.data.complaints;
+            blocksData = allDataJson.data.blocks;
+            usersData = allDataJson.data.users;
+            userData = allDataJson.data.user;
+            dashboardData = allDataJson.data.dashboard;
           }
+        } catch (err) {
+          console.error("Failed to parse unified all-data", err);
+        }
+      }
+
+      // Fallback to separate fetches if unified fails
+      if (!jobsData && !paymentsData) {
+        const [jobsRes, paymentsRes, complaintsRes, blocksRes, usersRes, userRes, dashboardRes] = await Promise.all([
+          fetch('/api/admin/jobs', { headers }).catch(() => null),
+          fetch('/api/admin/payments', { headers }).catch(() => null),
+          fetch('/api/admin/complaints', { headers }).catch(() => null),
+          fetch('/api/admin/blocks', { headers }).catch(() => null),
+          fetch('/api/admin/users', { headers }).catch(() => null),
+          fetch('/api/user', { headers }).catch(() => null),
+          fetch(`/api/admin/dashboard?date=${localDate}`, { headers }).catch(() => null),
+        ]);
+
+        try {
+          if (userRes && userRes.ok) userData = await userRes.json();
+        } catch {}
+        try {
+          if (dashboardRes && dashboardRes.ok) dashboardData = await dashboardRes.json();
+        } catch {}
+        try {
+          if (jobsRes && jobsRes.ok) jobsData = await jobsRes.json();
+        } catch {}
+        try {
+          if (paymentsRes && paymentsRes.ok) paymentsData = await paymentsRes.json();
+        } catch {}
+        try {
+          if (complaintsRes && complaintsRes.ok) complaintsData = await complaintsRes.json();
+        } catch {}
+        try {
+          if (blocksRes && blocksRes.ok) blocksData = await blocksRes.json();
+        } catch {}
+        try {
+          if (usersRes && usersRes.ok) usersData = await usersRes.json();
+        } catch {}
+      }
+
+      // Parse user profile
+      try {
+        const u = userData?.data || userData;
+        if (u) {
+          const nameParts = (u.name || 'Amantha Salgadu').split(' ');
+          const fName = nameParts[0] || 'Amantha';
+          const lName = nameParts.slice(1).join(' ') || 'Salgadu';
+          setSettingsProfile({
+            firstName: fName,
+            lastName: lName,
+            email: u.email || 'amanthasal@gmail.com',
+            role: u.role === 'admin' ? 'Scheme Manager' : u.role,
+            phone: u.phone || '+94 77 000 1122',
+            scheme: 'Greenfield Residencies',
+            avatarUrl: u.profile_photo_path ? `/storage/${u.profile_photo_path}` : 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=120&h=120&fit=crop&crop=faces&q=80'
+          });
         }
       } catch (err) {
         console.error("Failed to parse user profile details", err);
-      }
-
-      try {
-        if (dashboardRes && dashboardRes.ok && dashboardRes.headers.get('content-type')?.includes('application/json')) {
-          dashboardData = await dashboardRes.json();
-        }
-      } catch (err) {
-        console.error("Failed to parse dashboard data", err);
-      }
-
-      try {
-        if (jobsRes && jobsRes.ok && jobsRes.headers.get('content-type')?.includes('application/json')) {
-          jobsData = await jobsRes.json();
-        }
-      } catch (err) {
-        console.error("Failed to parse jobs data, falling back to local simulation", err);
-      }
-
-      try {
-        if (paymentsRes && paymentsRes.ok && paymentsRes.headers.get('content-type')?.includes('application/json')) {
-          paymentsData = await paymentsRes.json();
-        }
-      } catch (err) {
-        console.error("Failed to parse payments data, falling back to local simulation", err);
-      }
-
-      try {
-        if (complaintsRes && complaintsRes.ok && complaintsRes.headers.get('content-type')?.includes('application/json')) {
-          complaintsData = await complaintsRes.json();
-        }
-      } catch (err) {
-        console.error("Failed to parse complaints data, falling back to local simulation", err);
-      }
-
-      try {
-        if (blocksRes && blocksRes.ok && blocksRes.headers.get('content-type')?.includes('application/json')) {
-          blocksData = await blocksRes.json();
-        }
-      } catch (err) {
-        console.error("Failed to parse blocks data", err);
-      }
-
-      try {
-        if (usersRes && usersRes.ok && usersRes.headers.get('content-type')?.includes('application/json')) {
-          usersData = await usersRes.json();
-        }
-      } catch (err) {
-        console.error("Failed to parse users data", err);
       }
 
       let localJobs: any[] = [];

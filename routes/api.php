@@ -43,6 +43,7 @@ Route::middleware('auth:sanctum')->group(function () {
     // ==========================================================================
     Route::middleware('can:admin-access')->group(function () {
         Route::get('/admin/dashboard', [\App\Http\Controllers\AdminController::class, 'dashboard']);
+        Route::get('/admin/all-data', [\App\Http\Controllers\AdminController::class, 'allData']);
         
         // Structures (Blocks, Floors, Units)
         Route::apiResource('/admin/blocks', \App\Http\Controllers\BlockController::class);
