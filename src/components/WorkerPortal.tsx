@@ -835,7 +835,13 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
         'Expires': '0'
       };
 
-      const localDate = new Date().toLocaleDateString('sv-SE');
+      const now = new Date();
+      let localDate = now.toLocaleDateString('sv-SE');
+      if (localUser?.shift === 'night' && now.getHours() < 6) {
+        const yesterday = new Date(now);
+        yesterday.setDate(yesterday.getDate() - 1);
+        localDate = yesterday.toLocaleDateString('sv-SE');
+      }
       const timestamp = Date.now();
       const [tasksRes, histRes, statsRes] = await Promise.all([
         fetch(`/api/worker/tasks?date=${localDate}&_t=${timestamp}`, { headers }).catch(() => null),

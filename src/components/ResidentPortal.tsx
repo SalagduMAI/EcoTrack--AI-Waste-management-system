@@ -720,15 +720,26 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
             const todayStr = getLocalDateString();
             const isToday = next.scheduled_date === todayStr;
             if (isToday) {
-              if (next.status === 'in_progress') {
-                setHomeSimulationMode('active_tracker');
-              } else if (next.status === 'pending') {
-                if (next.worker && next.worker.shift_timer_paused === false) {
+              const nowHour = new Date().getHours();
+              const shiftLower = (next.shift || '').toLowerCase();
+              let shiftStarted = false;
+              if (shiftLower.includes('morning') && nowHour >= 8) shiftStarted = true;
+              else if (shiftLower.includes('evening') && nowHour >= 14) shiftStarted = true;
+              else if (shiftLower.includes('night') && (nowHour >= 22 || nowHour < 6)) shiftStarted = true;
+
+              if (shiftStarted) {
+                if (next.status === 'in_progress') {
                   setHomeSimulationMode('active_tracker');
-                } else {
-                  setHomeSimulationMode('pending_job');
+                } else if (next.status === 'pending') {
+                  if (next.worker && next.worker.shift_timer_paused === false) {
+                    setHomeSimulationMode('active_tracker');
+                  } else {
+                    setHomeSimulationMode('pending_job');
+                  }
+                } else if (next.status === 'done') {
+                  setHomeSimulationMode('normal_caught_up');
                 }
-              } else if (next.status === 'done') {
+              } else {
                 setHomeSimulationMode('normal_caught_up');
               }
             } else {

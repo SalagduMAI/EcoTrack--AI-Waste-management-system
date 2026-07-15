@@ -39,7 +39,8 @@ class ResidentController extends Controller
             ]);
         }
 
-        $todayStr = Carbon::today()->format('Y-m-d');
+        $now = Carbon::now();
+        $todayStr = ($now->hour < 6) ? $now->copy()->subDay()->format('Y-m-d') : $now->format('Y-m-d');
 
         // Locate next collection schedule (Floor wide or Unit specific)
         $nextJob = Job::with('worker')
