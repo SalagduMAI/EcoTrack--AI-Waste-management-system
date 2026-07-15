@@ -6618,9 +6618,26 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                             <select
                               value={createJobForm.shift}
                               onChange={(e) => {
+                                const selectedShift = e.target.value;
+                                let targetDate = createJobForm.date;
+                                const now = new Date();
+                                if (selectedShift.includes('Night') && now.getHours() < 6) {
+                                  const yesterday = new Date(now);
+                                  yesterday.setDate(yesterday.getDate() - 1);
+                                  const year = yesterday.getFullYear();
+                                  const month = String(yesterday.getMonth() + 1).padStart(2, '0');
+                                  const day = String(yesterday.getDate()).padStart(2, '0');
+                                  targetDate = `${year}-${month}-${day}`;
+                                } else {
+                                  const year = now.getFullYear();
+                                  const month = String(now.getMonth() + 1).padStart(2, '0');
+                                  const day = String(now.getDate()).padStart(2, '0');
+                                  targetDate = `${year}-${month}-${day}`;
+                                }
                                 setCreateJobForm({
                                   ...createJobForm,
-                                  shift: e.target.value
+                                  shift: selectedShift,
+                                  date: targetDate
                                 });
                               }}
                               className="w-full bg-[#F4F6F0]/40 border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#2E7D32]/10 focus:border-[#2E7D32] rounded-xl px-3 py-2.5 text-xs font-bold text-gray-700"

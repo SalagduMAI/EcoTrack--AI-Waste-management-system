@@ -62,17 +62,26 @@ class Job extends Model
     {
         $now = \Carbon\Carbon::now();
         $todayStr = $now->format('Y-m-d');
+        $currentHour = $now->hour;
+        $yesterdayStr = $now->copy()->subDay()->format('Y-m-d');
 
-        // 1. Past dates
+        // 1. Expire past dates, but exclude yesterday's night shift if it's currently before 6 AM
         self::where('scheduled_date', '<', $todayStr)
             ->whereIn('status', ['pending', 'in_progress'])
+            ->where(function($query) use ($yesterdayStr, $currentHour) {
+                if ($currentHour < 6) {
+                    $query->whereNot(function($q) use ($yesterdayStr) {
+                        $q->where('scheduled_date', $yesterdayStr)
+                          ->where('shift', 'night');
+                    });
+                }
+            })
             ->update([
                 'status' => 'issue',
                 'issue_reason' => 'Missed Collection - Shift expired without completion'
             ]);
 
-        // 2. Today\'s ended shifts
-        $currentHour = $now->hour;
+        // 2. Today's ended shifts
         if ($currentHour >= 14) {
             self::where('scheduled_date', $todayStr)
                 ->where('shift', 'morning')
@@ -89,6 +98,17 @@ class Job extends Model
                 ->update([
                     'status' => 'issue',
                     'issue_reason' => 'Missed Collection - Evening shift expired'
+                ]);
+        }
+
+        // 3. Yesterday's night shift (ends at 06:00 today)
+        if ($currentHour >= 6) {
+            self::where('scheduled_date', $yesterdayStr)
+                ->where('shift', 'night')
+                ->whereIn('status', ['pending', 'in_progress'])
+                ->update([
+                    'status' => 'issue',
+                    'issue_reason' => 'Missed Collection - Night shift expired'
                 ]);
         }
     }
