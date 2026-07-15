@@ -335,6 +335,7 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
   const [showQRModal, setShowQRModal] = useState(false);
   const [qrInput, setQrInput] = useState('');
   const [isQrVerified, setIsQrVerified] = useState(false);
+  const [scannedUnitNo, setScannedUnitNo] = useState<string | null>(null);
   const [selectedScanJobId, setSelectedScanJobId] = useState<number | null>(null);
   
   const [showIncidentModal, setShowIncidentModal] = useState(false);
@@ -1232,6 +1233,8 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
           { id: finalJob.id, block: finalJob.block, floor: finalJob.floor, unit: finalJob.unit, scheduled_date: '2026-05-22', status: 'done', completed_at: timedAt },
           ...prev
         ]);
+        setScannedUnitNo(finalJob.unit?.unit_number || finalJob.block?.name + ' corridor');
+        setIsQrVerified(true);
       }
       setActionLoading(false);
       setQrInput('');
@@ -1256,6 +1259,8 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
       }
 
       setMessage({ text: `Bin at ${finalJob.unit?.unit_number || 'Corridor'} checked and cleared. status updated Done.`, type: 'success' });
+      setScannedUnitNo(finalJob.unit?.unit_number || finalJob.block?.name + ' corridor');
+      setIsQrVerified(true);
       await fetchTasks();
     } catch (error) {
       if (isNetworkFailure(error)) {
@@ -1266,6 +1271,8 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
             { id: finalJob.id, block: finalJob.block, floor: finalJob.floor, unit: finalJob.unit, scheduled_date: '2026-05-22', status: 'done', completed_at: timedAt },
             ...prev
           ]);
+          setScannedUnitNo(finalJob.unit?.unit_number || finalJob.block?.name + ' corridor');
+          setIsQrVerified(true);
         }
       } else {
         setMessage({
@@ -2322,10 +2329,37 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
 
                   <div className="space-y-4 max-w-xl z-10 flex-1">
                     <div className="flex items-center gap-2">
-                      <span className="inline-flex items-center gap-1 bg-[#EEFDF2]/90 text-[#1E4D2B] text-[10px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider">
-                        <span className="w-1.5 h-1.5 rounded-full bg-blue-600 animate-ping"></span>
-                        In-Progress
-                      </span>
+                      {(() => {
+                        if (!shiftStartTime || timerSeconds === 0) {
+                          return (
+                            <span className="inline-flex items-center gap-1 bg-slate-100/95 text-slate-800 text-[10px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider">
+                              <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
+                              Not Started
+                            </span>
+                          );
+                        } else if (timerPaused) {
+                          return (
+                            <span className="inline-flex items-center gap-1 bg-amber-50/95 text-amber-800 text-[10px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider">
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+                              Paused
+                            </span>
+                          );
+                        } else if (!isWithinShiftHours() || (totalCount > 0 && doneCount === totalCount)) {
+                          return (
+                            <span className="inline-flex items-center gap-1 bg-blue-50/95 text-blue-800 text-[10px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider">
+                              <span className="w-1.5 h-1.5 rounded-full bg-blue-400"></span>
+                              Completed
+                            </span>
+                          );
+                        } else {
+                          return (
+                            <span className="inline-flex items-center gap-1 bg-[#EEFDF2]/90 text-[#1E4D2B] text-[10px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping"></span>
+                              In-Progress
+                            </span>
+                          );
+                        }
+                      })()}
                       <span className="text-[10px] uppercase font-bold text-emerald-250 tracking-wider">
                         {localUser?.shift || 'Morning'} SHIFT • {
                           (localUser?.shift?.toLowerCase() || '').includes('evening') ? '14:00 - 22:00' : 
@@ -6062,6 +6096,32 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {isQrVerified && (
+        <div className="fixed inset-0 bg-slate-950/70 z-50 flex items-center justify-center p-6 backdrop-blur-md animate-in fade-in duration-200">
+          <div className="bg-white border border-gray-150 p-8 rounded-3xl max-w-sm w-full text-center space-y-5 shadow-2xl animate-in zoom-in-95 duration-250">
+            <div className="w-20 h-20 bg-emerald-600 text-white rounded-full flex items-center justify-center mx-auto shadow-lg border-4 border-emerald-100 shadow-emerald-500/20">
+              <Check className="w-10 h-10 text-white stroke-[4.5]" />
+            </div>
+            <div className="space-y-1.5">
+              <h3 className="text-lg font-black text-gray-900 uppercase tracking-tight font-sans">Scan Verified!</h3>
+              <p className="text-xs text-gray-550 font-bold leading-relaxed">
+                Waste collection for unit <strong className="text-emerald-800 font-black">{scannedUnitNo || 'Floor corridor'}</strong> has been successfully verified, recorded, and updated in the system.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setIsQrVerified(false);
+                setScannedUnitNo(null);
+              }}
+              className="w-full py-3 bg-[#1E4D2B] text-white rounded-xl text-xs font-bold uppercase tracking-wider hover:bg-emerald-800 shadow-md cursor-pointer transition-all"
+            >
+              Acknowledge & Close
+            </button>
           </div>
         </div>
       )}

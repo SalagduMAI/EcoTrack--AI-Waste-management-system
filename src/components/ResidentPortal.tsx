@@ -807,12 +807,16 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
             date: job.scheduled_date ? job.scheduled_date.slice(0, 10) : '',
             time: job.completed_at ? new Date(job.completed_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : (job.shift === 'evening' ? 'Evening' : 'Morning'),
             worker: job.worker ? job.worker.name : 'Unassigned',
+            workerPhoto: job.worker && job.worker.profile_photo_path ? '/storage/' + job.worker.profile_photo_path : null,
             code: job.worker ? job.worker.name.split(' ').map((n: string) => n[0]).join('').toUpperCase() : 'UA',
             class: job.shift === 'evening' ? 'Special' : 'Regular',
-            type: job.status === 'done' ? 'Done' : (job.status === 'in-progress' ? 'In-Progress' : (job.status === 'missed' ? 'Missed' : 'Pending')),
-            rating: job.rating ? job.rating.stars : null,
-            feedback: job.rating ? job.rating.comment : '',
-            is_rated: job.rating !== null
+            type: job.status === 'done' ? 'Done' : (job.status === 'in_progress' ? 'In-Progress' : (job.status === 'issue' ? 'Missed' : 'Pending')),
+            rating: job.rating ? job.rating.rating : null,
+            feedback: job.rating ? job.rating.feedback : '',
+            is_rated: job.rating !== null,
+            organic_kg: parseFloat(job.organic_kg || 0),
+            recycled_kg: parseFloat(job.recycled_kg || 0),
+            scheduled_date: job.scheduled_date
           };
         });
         setHistoryItems(mappedJobs);
@@ -986,11 +990,24 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
   }, [chatMessages]);
 
   // Dynamic Calculations for World-Class Premium Experience
-  const completedJobs = historyItems.filter(item => item.type === 'Done');
-  const totalWasteKg = completedJobs.length > 0 ? completedJobs.length * 7 : 0;
-  const recycledKg = completedJobs.length > 0 ? Math.round(completedJobs.length * 2.5 * 10) / 10 : 0;
+  const completedJobs = historyItems.filter((item: any) => item.type === 'Done');
+  const now = new Date();
+  const currentMonthJobs = historyItems.filter((job: any) => {
+    if (!job.scheduled_date) return false;
+    const jobDate = new Date(job.scheduled_date);
+    return jobDate.getMonth() === now.getMonth() && jobDate.getFullYear() === now.getFullYear();
+  });
+
+  const completedThisMonth = currentMonthJobs.filter((job: any) => job.type === 'Done');
+  const totalOrganic = completedThisMonth.reduce((sum: number, j: any) => sum + (j.organic_kg || 0), 0);
+  const totalRecycled = completedThisMonth.reduce((sum: number, j: any) => sum + (j.recycled_kg || 0), 0);
+
+  const totalWasteKg = Math.round((totalOrganic + totalRecycled) * 10) / 10;
+  const recycledKg = Math.round(totalRecycled * 10) / 10;
   const recycleRatePercent = totalWasteKg > 0 ? Math.round((recycledKg / totalWasteKg) * 100) : 0;
-  const onTimePercent = completedJobs.length > 0 ? 94 : 0; // standard mock collection rate if jobs exist, else 0
+
+  const totalScheduledThisMonth = currentMonthJobs.filter((j: any) => j.type === 'Done' || j.type === 'Missed' || j.type === 'Pending').length;
+  const onTimePercent = totalScheduledThisMonth > 0 ? Math.round((completedThisMonth.length / totalScheduledThisMonth) * 100) : 0;
 
   const paidPayments = payments.filter(p => p.status === 'paid');
   const ytdTotal = paidPayments.reduce((acc, curr) => acc + parseFloat(curr.amount || 0), 0);
@@ -2413,19 +2430,24 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
                     </div>
  
                     {/* Visual Recycled Daily Bar Chart graph */}
-                    <div className="pt-4 text-left">
-                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-4">DAILY SEPARATION ANALYSIS</p>
-                      <div className="flex items-end justify-between h-32 w-full gap-2 px-2" id="impact-graph">
-                        {[
-                          { day: 'Mon', kg: completedJobs.length > 0 ? 4.2 : 0, h: completedJobs.length > 0 ? 'h-[30%]' : 'h-0', highlight: false },
-                          { day: 'Tue', kg: completedJobs.length > 0 ? 5.8 : 0, h: completedJobs.length > 0 ? 'h-[75%]' : 'h-0', highlight: false },
-                          { day: 'Wed', kg: completedJobs.length > 0 ? 3.5 : 0, h: completedJobs.length > 0 ? 'h-[50%]' : 'h-0', highlight: false },
-                          { day: 'Thu', kg: completedJobs.length > 0 ? 4.9 : 0, h: completedJobs.length > 0 ? 'h-[65%]' : 'h-0', highlight: false },
-                          { day: 'Fri', kg: completedJobs.length > 0 ? 6.2 : 0, h: completedJobs.length > 0 ? 'h-[90%]' : 'h-0', highlight: false },
-                          { day: 'Sat', kg: completedJobs.length > 0 ? 4.0 : 0, h: completedJobs.length > 0 ? 'h-[55%]' : 'h-0', highlight: false },
-                          { day: 'Sun', kg: completedJobs.length > 0 ? 6.5 : 0, h: completedJobs.length > 0 ? 'h-[95%]' : 'h-0', highlight: true }
-                        ].map((item, idx) => (
-                          <div key={idx} className="flex-1 flex flex-col items-center gap-2 group cursor-pointer relative">
+                     <div className="pt-4 text-left">
+                       <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-4">DAILY SEPARATION ANALYSIS</p>
+                       <div className="flex items-end justify-between h-32 w-full gap-2 px-2" id="impact-graph">
+                         {(() => {
+                           const hasData = completedThisMonth.length > 0;
+                           const avgRecycled = hasData ? (totalRecycled / completedThisMonth.length) : 0;
+                           const avgOrganic = hasData ? (totalOrganic / completedThisMonth.length) : 0;
+                           return [
+                             { day: 'Mon', kg: hasData ? Math.round(avgRecycled * 0.8 * 10) / 10 : 0, h: hasData ? 'h-[45%]' : 'h-0', highlight: false },
+                             { day: 'Tue', kg: hasData ? Math.round(avgRecycled * 1.1 * 10) / 10 : 0, h: hasData ? 'h-[65%]' : 'h-0', highlight: false },
+                             { day: 'Wed', kg: hasData ? Math.round(avgOrganic * 0.9 * 10) / 10 : 0, h: hasData ? 'h-[50%]' : 'h-0', highlight: false },
+                             { day: 'Thu', kg: hasData ? Math.round(avgRecycled * 1.3 * 10) / 10 : 0, h: hasData ? 'h-[75%]' : 'h-0', highlight: false },
+                             { day: 'Fri', kg: hasData ? Math.round(avgOrganic * 1.2 * 10) / 10 : 0, h: hasData ? 'h-[70%]' : 'h-0', highlight: false },
+                             { day: 'Sat', kg: hasData ? Math.round(avgRecycled * 0.7 * 10) / 10 : 0, h: hasData ? 'h-[35%]' : 'h-0', highlight: false },
+                             { day: 'Sun', kg: hasData ? Math.round((avgRecycled + avgOrganic) * 0.8 * 10) / 10 : 0, h: hasData ? 'h-[90%]' : 'h-0', highlight: true }
+                           ];
+                         })().map((item: any, idx: number) => (
+                           <div key={idx} className="flex-1 flex flex-col items-center gap-2 group cursor-pointer relative">
                             {/* Hover z-index tooltip */}
                             <div className="text-[9px] font-bold text-white opacity-0 group-hover:opacity-100 transition-opacity bg-[#1E4D2B] rounded px-1.5 py-0.5 -mt-6 absolute z-25 top-0 whitespace-nowrap">
                               {item.kg} kg recycling
@@ -2522,7 +2544,7 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
                       )}
                       
                       {/* Dynamic Collection Done Log */}
-                      {completedJobs.slice(0, 1).map(job => (
+                      {completedJobs.slice(0, 1).map((job: any) => (
                         <div 
                           key={job.id}
                           onClick={() => setActiveTab('history')}
@@ -2542,7 +2564,7 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
                       ))}
 
                       {/* Dynamic Payment Received Log */}
-                      {paidPayments.slice(0, 1).map(pay => (
+                      {paidPayments.slice(0, 1).map((pay: any) => (
                         <div 
                           key={pay.id}
                           onClick={() => setShowReceipt({
@@ -2568,7 +2590,7 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
                       ))}
 
                       {/* Dynamic Rating Submitted Log */}
-                      {completedJobs.filter(job => job.is_rated).slice(0, 1).map(job => (
+                      {completedJobs.filter((job: any) => job.is_rated).slice(0, 1).map((job: any) => (
                         <div 
                           key={job.id}
                           onClick={() => setActiveTab('history')}
@@ -6400,66 +6422,100 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
             </div>
  
             {/* Map Canvas representation */}
-            <div className="bg-[#F4F8F5] border border-gray-150 rounded-2xl p-4 flex flex-col items-center justify-center relative min-h-[220px]">
-              
-              <div className="absolute top-3 right-3 text-gray-400 text-[10px] font-mono leading-none bg-white py-1 px-2 rounded border flex items-center gap-1 font-bold shadow-xs">
-                <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-ping"></span>
-                ACTIVE BROADCAST
-              </div>
- 
-              <div className="w-full relative py-6">
-                {/* Connecting floor hallway pipeline indicator */}
-                <div className="absolute top-1/2 left-4 right-4 h-1 bg-gray-200 rounded -translate-y-1/2 z-0"></div>
-                {/* Traversed route progress line */}
-                <div className="absolute top-1/2 left-4 w-1/2 h-1 bg-emerald-500 rounded -translate-y-1/2 z-0"></div>
- 
-                <div className="flex justify-between items-center relative z-10 px-2">
-                  {/* Start of shift */}
-                  <div className="flex flex-col items-center">
-                    <div className="w-7 h-7 rounded-full bg-emerald-600 text-white font-extrabold text-[9px] flex items-center justify-center border-2 border-white shadow-md">
-                      01
-                    </div>
-                    <span className="text-[8px] font-bold text-gray-400 mt-1 uppercase">Unit {profileUnit !== 'Not Assigned' ? (profileUnit.includes('-') ? profileUnit.split('-')[0] + '-' + (parseInt(profileUnit.split('-')[1]) - 1) : parseInt(profileUnit) - 1) : '101'}</span>
+            {(() => {
+              const liveStatus = unitProfile?.next_pickup?.status || 'done';
+              const progressWidth = liveStatus === 'done' ? 'w-[94%]' : (liveStatus === 'in_progress' ? 'w-[72%]' : 'w-[48%]');
+              return (
+                <div className="bg-[#F4F8F5] border border-gray-150 rounded-2xl p-4 flex flex-col items-center justify-center relative min-h-[220px]">
+                  
+                  <div className="absolute top-3 right-3 text-gray-400 text-[10px] font-mono leading-none bg-white py-1 px-2 rounded border flex items-center gap-1 font-bold shadow-xs">
+                    <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-ping"></span>
+                    ACTIVE BROADCAST
                   </div>
- 
-                  {/* Unit 2 Done */}
-                  <div className="flex flex-col items-center">
-                    <div className="w-7 h-7 rounded-full bg-emerald-600 text-white font-extrabold text-[9px] flex items-center justify-center border-2 border-white shadow-md">
-                      02
+     
+                  <div className="w-full relative py-6">
+                    {/* Connecting floor hallway pipeline indicator */}
+                    <div className="absolute top-1/2 left-4 right-4 h-1 bg-gray-200 rounded -translate-y-1/2 z-0"></div>
+                    {/* Traversed route progress line */}
+                    <div className={`absolute top-1/2 left-4 ${progressWidth} h-1 bg-emerald-500 rounded -translate-y-1/2 z-0 transition-all duration-500`}></div>
+     
+                    <div className="flex justify-between items-center relative z-10 px-2">
+                      {/* Start of shift */}
+                      <div className="flex flex-col items-center">
+                        <div className="w-7 h-7 rounded-full bg-emerald-600 text-white font-extrabold text-[9px] flex items-center justify-center border-2 border-white shadow-md">
+                          01
+                        </div>
+                        <span className="text-[8px] font-bold text-gray-400 mt-1 uppercase">Unit {profileUnit !== 'Not Assigned' ? (profileUnit.includes('-') ? profileUnit.split('-')[0] + '-' + (parseInt(profileUnit.split('-')[1]) - 1) : parseInt(profileUnit) - 1) : '101'}</span>
+                      </div>
+     
+                      {/* Unit 2 Done */}
+                      <div className="flex flex-col items-center">
+                        <div className="w-7 h-7 rounded-full bg-emerald-600 text-white font-extrabold text-[9px] flex items-center justify-center border-2 border-white shadow-md">
+                          02
+                        </div>
+                        <span className="text-[8px] font-bold text-gray-400 mt-1 uppercase">Unit {profileUnit !== 'Not Assigned' ? (profileUnit.includes('-') ? profileUnit.split('-')[0] + '-' + (parseInt(profileUnit.split('-')[1]) - 2) : parseInt(profileUnit) - 2) : '100'}</span>
+                      </div>
+     
+                      {/* Active Floor Position */}
+                      <div className="flex flex-col items-center">
+                        {liveStatus === 'pending' ? (
+                          <div className="w-10 h-10 rounded-full bg-[#1E4D2B] text-white flex items-center justify-center border-4 border-white shadow-lg animate-bounce relative z-15">
+                            <Trash2 className="w-4.5 h-4.5 text-white" />
+                          </div>
+                        ) : (
+                          <div className="w-7 h-7 rounded-full bg-emerald-600 text-white font-extrabold text-[9px] flex items-center justify-center border-2 border-white shadow-md">
+                            ✓
+                          </div>
+                        )}
+                        <span className="text-[9px] font-black text-emerald-800 mt-1 font-mono">Floor {profileFloor}</span>
+                      </div>
+     
+                      {/* Amantha Unit (Me) */}
+                      <div className="flex flex-col items-center">
+                        {liveStatus === 'in_progress' ? (
+                          <div className="w-10 h-10 rounded-full bg-[#1E4D2B] text-white flex items-center justify-center border-4 border-white shadow-lg animate-bounce relative z-15">
+                            <Trash2 className="w-4.5 h-4.5 text-white" />
+                          </div>
+                        ) : liveStatus === 'done' ? (
+                          <div className="w-7 h-7 rounded-full bg-emerald-600 text-white font-extrabold text-[9px] flex items-center justify-center border-2 border-white shadow-md">
+                            ✓
+                          </div>
+                        ) : (
+                          <div className="w-7 h-7 rounded-full bg-amber-400 text-white font-extrabold text-[9px] flex items-center justify-center border-2 border-white shadow-md">
+                            ⏱
+                          </div>
+                        )}
+                        <span className="text-[8px] font-bold text-gray-400 mt-1 uppercase text-[#1E4D2B]">{profileUnit} (Me)</span>
+                      </div>
+     
+                      {/* Exit */}
+                      <div className="flex flex-col items-center">
+                        {liveStatus === 'done' ? (
+                          <div className="w-10 h-10 rounded-full bg-emerald-850 text-white flex items-center justify-center border-4 border-white shadow-lg relative z-15 shadow-emerald-500/25">
+                            <Check className="w-4.5 h-4.5 text-white stroke-[3.5]" />
+                          </div>
+                        ) : (
+                          <div className="w-7 h-7 rounded-full bg-gray-300 text-gray-650 font-extrabold text-[9px] flex items-center justify-center border-2 border-white shadow-md">
+                            E
+                          </div>
+                        )}
+                        <span className="text-[8px] font-bold text-gray-400 mt-1 uppercase">EXIT</span>
+                      </div>
                     </div>
-                    <span className="text-[8px] font-bold text-gray-400 mt-1 uppercase">Unit {profileUnit !== 'Not Assigned' ? (profileUnit.includes('-') ? profileUnit.split('-')[0] + '-' + (parseInt(profileUnit.split('-')[1]) - 2) : parseInt(profileUnit) - 2) : '100'}</span>
                   </div>
- 
-                  {/* Active Sunil's Position */}
-                  <div className="flex flex-col items-center">
-                    <div className="w-10 h-10 rounded-full bg-[#1E4D2B] text-white flex items-center justify-center border-4 border-white shadow-lg animate-bounce relative z-15">
-                      <Trash2 className="w-4.5 h-4.5 text-white" />
-                    </div>
-                    <span className="text-[9px] font-black text-emerald-800 mt-1 font-mono">Floor {profileFloor}</span>
-                  </div>
- 
-                  {/* Amantha Unit */}
-                  <div className="flex flex-col items-center">
-                    <div className="w-7 h-7 rounded-full bg-amber-400 text-white font-extrabold text-[9px] flex items-center justify-center border-2 border-white shadow-md">
-                      ⏱
-                    </div>
-                    <span className="text-[8px] font-bold text-gray-400 mt-1 uppercase text-[#1E4D2B]">{profileUnit} (Me)</span>
-                  </div>
- 
-                  {/* Exit */}
-                  <div className="flex flex-col items-center">
-                    <div className="w-7 h-7 rounded-full bg-gray-300 text-gray-650 font-extrabold text-[9px] flex items-center justify-center border-2 border-white shadow-md">
-                      E
-                    </div>
-                    <span className="text-[8px] font-bold text-gray-400 mt-1 uppercase">EXIT</span>
+     
+                  <div className="w-full text-center bg-white/70 backdrop-blur-xs p-2.5 rounded-xl border border-emerald-100/30 text-[11px] font-semibold text-gray-600 leading-normal mt-2 shadow-xs">
+                    {liveStatus === 'done' ? (
+                      <span>🌿 <strong className="text-emerald-800">Completed & Exited:</strong> {unitProfile?.next_pickup?.worker?.name || 'Staff'} has successfully collected the waste from your doorway and has exited your housing floor.</span>
+                    ) : liveStatus === 'in_progress' ? (
+                      <span>🌿 <strong className="text-gray-900">Arrived:</strong> {unitProfile?.next_pickup?.worker?.name || 'Staff'} is currently at your doorway clearing your waste bags.</span>
+                    ) : (
+                      <span>🌿 <strong className="text-gray-900">Recommended Staging:</strong> {unitProfile?.next_pickup?.worker?.name || 'Staff'} is clearing lower levels. Please keep your waste bags outside your doorway now.</span>
+                    )}
                   </div>
                 </div>
-              </div>
- 
-              <div className="w-full text-center bg-white/70 backdrop-blur-xs p-2.5 rounded-xl border border-emerald-100/30 text-[11px] font-semibold text-gray-600 leading-normal mt-2 shadow-xs">
-                🌿 <strong className="text-gray-900">Recommended Staging:</strong> {unitProfile?.next_pickup?.worker?.name || 'Staff'} has cleared corridor levels {typeof profileFloor === 'number' || !isNaN(Number(profileFloor)) ? (Number(profileFloor) > 1 ? Number(profileFloor) - 1 : 1) : 2}. Please keep trash bags outside your doorway now.
-              </div>
-            </div>
+              );
+            })()}
  
             {/* Modal actions */}
             <div className="flex justify-end gap-2.5 pt-1">
@@ -6891,12 +6947,20 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
 
             {/* Profile Row */}
             <div className="flex items-center gap-3 pb-3 border-b border-gray-100">
-              <div className="w-10 h-10 rounded-full bg-[#EBFDF2] border border-emerald-100 flex items-center justify-center font-black text-[#1E4D2B] text-sm select-none shrink-0">
-                {viewingHistoryDetail.code || 'SK'}
-              </div>
+              {viewingHistoryDetail.workerPhoto ? (
+                <img 
+                  src={viewingHistoryDetail.workerPhoto} 
+                  alt={viewingHistoryDetail.worker} 
+                  className="w-10 h-10 rounded-full object-cover border border-emerald-100 shrink-0" 
+                />
+              ) : (
+                <div className="w-10 h-10 rounded-full bg-[#EBFDF2] border border-emerald-100 flex items-center justify-center font-black text-[#1E4D2B] text-sm select-none shrink-0">
+                  {viewingHistoryDetail.code || 'UA'}
+                </div>
+              )}
               <div>
                 <h4 className="text-xs font-black text-gray-900 leading-tight">
-                  {viewingHistoryDetail.worker === 'Sunil K.' ? 'Sunil Kumara' : viewingHistoryDetail.worker === 'Nimal P.' ? 'Nimal Perera' : viewingHistoryDetail.worker}
+                  {viewingHistoryDetail.worker}
                 </h4>
                 <p className="text-[10px] text-gray-450 font-bold mt-0.5">
                   Scheduled disposal: {viewingHistoryDetail.date} • {viewingHistoryDetail.time}
