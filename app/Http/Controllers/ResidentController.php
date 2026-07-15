@@ -149,6 +149,19 @@ class ResidentController extends Controller
             ->take(3)
             ->get();
 
+        $todayJobDone = Job::where(function($q) use ($unit) {
+                $q->where('unit_id', $unit->id)
+                  ->orWhere(function($sq) use ($unit) {
+                      $sq->whereNull('unit_id')
+                        ->where('floor_id', $unit->floor_id);
+                  });
+            })
+            ->whereDate('scheduled_date', $todayStr)
+            ->whereIn('status', ['done', 'issue'])
+            ->exists();
+
+        $fallbackDate = $todayJobDone ? Carbon::parse($todayStr)->addDay()->format('Y-m-d') : Carbon::today()->format('Y-m-d');
+
         return response()->json([
             'status' => 'success',
             'data' => [
@@ -160,9 +173,9 @@ class ResidentController extends Controller
                 'unpaid_balance_lkr' => $unpaidBalanceSum,
                 'pending_bills_count' => $pendingBillsCount,
                 'next_pickup' => ($nextJob || $assignedWorkerModel) ? [
-                    'scheduled_date' => $nextJob ? $nextJob->scheduled_date->format('Y-m-d') : Carbon::today()->format('Y-m-d'),
+                    'scheduled_date' => $nextJob ? $nextJob->scheduled_date->format('Y-m-d') : $fallbackDate,
                     'shift' => $nextJob ? ucfirst($nextJob->shift) : ucfirst($assignedWorkerModel->shift ?? 'morning'),
-                    'status' => $nextJob ? $nextJob->status : 'pending',
+                    'status' => $nextJob ? $nextJob->status : ($todayJobDone ? 'done' : 'pending'),
                     'worker' => ($nextJob && $nextJob->worker) ? [
                         'name' => $nextJob->worker->name,
                         'phone' => $nextJob->worker->phone,

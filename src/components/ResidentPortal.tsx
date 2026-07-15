@@ -991,6 +991,34 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
 
   // Dynamic Calculations for World-Class Premium Experience
   const completedJobs = historyItems.filter((item: any) => item.type === 'Done');
+  const todayLocalDateStr = getLocalDateString(new Date());
+  const isTodayCollectionDone = historyItems.some((item: any) => {
+    return item.date === todayLocalDateStr && item.type === 'Done';
+  });
+
+  const todayJob = historyItems.find((item: any) => item.date === todayLocalDateStr && item.type === 'Done');
+  const todayWorkerName = todayJob?.worker || unitProfile?.next_pickup?.worker?.name || 'Staff';
+
+  const getFormattedNextPickup = () => {
+    if (!unitProfile || !unitProfile.next_pickup || !unitProfile.next_pickup.scheduled_date) {
+      return "Wednesday at 6:30 AM";
+    }
+    const dateStr = unitProfile.next_pickup.scheduled_date;
+    if (dateStr.includes('No scheduled')) return "Wednesday at 6:30 AM";
+
+    const dateObj = new Date(dateStr);
+    if (isNaN(dateObj.getTime())) return "Wednesday at 6:30 AM";
+
+    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const dayName = days[dateObj.getDay()];
+    
+    const shift = (unitProfile.next_pickup.shift || 'morning').toLowerCase();
+    let timeStr = '6:30 AM';
+    if (shift.includes('evening')) timeStr = '2:30 PM';
+    else if (shift.includes('night')) timeStr = '10:30 PM';
+
+    return `${dayName} at ${timeStr}`;
+  };
   const now = new Date();
   const currentMonthJobs = historyItems.filter((job: any) => {
     if (!job.scheduled_date) return false;
@@ -1707,7 +1735,7 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
               <div>
                 <span className="text-[10px] font-bold text-[#1E4D2B] uppercase tracking-widest block font-mono">
                   {homeSimulationMode === 'normal_caught_up' 
-                    ? 'No collection scheduled today' 
+                    ? (isTodayCollectionDone ? "Today's collection completed 🌿" : 'No collection scheduled today') 
                     : (homeSimulationMode === 'offline_pending' || homeSimulationMode === 'pending_job') 
                     ? "Today's collection" 
                     : `Greenfield Residencies - ${profileBlock || 'Block A'}`}
@@ -2263,12 +2291,12 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
                         </div>
                         <div>
                           <h2 className="text-lg md:text-xl font-black text-[#1E4D2B] tracking-tight font-sans">
-                            {unitProfile?.next_pickup?.status === 'done' ? "Today's collection is complete!" : "You're all caught up!"}
+                            {(unitProfile?.next_pickup?.status === 'done' || isTodayCollectionDone) ? "Today's collection is complete!" : "You're all caught up!"}
                           </h2>
                           <p className="text-xs text-gray-500 font-bold leading-relaxed mt-1">
-                            {unitProfile?.next_pickup?.status === 'done'
-                              ? `Our operator ${unitProfile?.next_pickup?.worker?.name || 'Staff'} has successfully cleared your corridor level today.`
-                              : "No collection scheduled for today. Your next pickup is Wednesday at 6:30 AM."}
+                            {(unitProfile?.next_pickup?.status === 'done' || isTodayCollectionDone)
+                              ? `Our operator ${todayWorkerName} has successfully cleared your corridor level today.`
+                              : `No collection scheduled for today. Your next pickup is ${getFormattedNextPickup()}.`}
                           </p>
                         </div>
                       </div>
