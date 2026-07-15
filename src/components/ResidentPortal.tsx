@@ -723,8 +723,8 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
               const nowHour = new Date().getHours();
               const shiftLower = (next.shift || '').toLowerCase();
               let shiftStarted = false;
-              if (shiftLower.includes('morning') && nowHour >= 8) shiftStarted = true;
-              else if (shiftLower.includes('evening') && nowHour >= 14) shiftStarted = true;
+              if (shiftLower.includes('morning') && nowHour >= 6 && nowHour < 14) shiftStarted = true;
+              else if (shiftLower.includes('evening') && nowHour >= 14 && nowHour < 22) shiftStarted = true;
               else if (shiftLower.includes('night') && (nowHour >= 22 || nowHour < 6)) shiftStarted = true;
 
               if (shiftStarted) {
