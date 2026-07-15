@@ -183,11 +183,15 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
   const [specialCardExpiry, setSpecialCardExpiry] = useState('12 / 28');
   const [specialCardCvv, setSpecialCardCvv] = useState('333');
   const [specialCardName, setSpecialCardName] = useState('A. Rajapaksa');
+  const [successPayment, setSuccessPayment] = useState<any | null>(null);
   
   // Home tab Scenario Simulation state
   const [homeSimulationMode, setHomeSimulationMode] = useState<'active_tracker' | 'normal_caught_up' | 'offline_pending' | 'pending_job'>('active_tracker');
 
   const handleDownloadPDF = () => {
+    const receiptNo = successPayment?.reference_code || 'R-294821';
+    const transactionDate = successPayment?.date || `${specialDate}, 10:42 AM`;
+
     const doc = new jsPDF({
       orientation: 'portrait',
       unit: 'mm',
@@ -220,7 +224,7 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
     doc.text('RECEIPT NO:', 20, 48);
     doc.setTextColor(30, 30, 30);
     doc.setFont('Helvetica', 'bold');
-    doc.text('R-294821', 55, 48);
+    doc.text(receiptNo, 55, 48);
 
     doc.setFont('Helvetica', 'normal');
     doc.setTextColor(120, 120, 120);
@@ -241,7 +245,7 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
     doc.text('DATE:', 120, 48);
     doc.setTextColor(30, 30, 30);
     doc.setFont('Helvetica', 'bold');
-    doc.text(specialDate || '2026-05-13', 150, 48);
+    doc.text(transactionDate, 150, 48);
 
     doc.setFont('Helvetica', 'normal');
     doc.setTextColor(120, 120, 120);
@@ -306,7 +310,7 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
     doc.text('Computer-generated receipt • Thank you for using EcoTrack Greenfield', 105, 138, { align: 'center' });
 
     // Save the PDF
-    doc.save(`EcoTrack-Receipt-R-294821.pdf`);
+    doc.save(`EcoTrack-Receipt-${receiptNo}.pdf`);
     setMessage("Success: Downloaded printable payment reference PDF invoice!");
   };
 
@@ -1407,6 +1411,13 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
         console.warn("Payment settle mock bypass", payErr);
       }
 
+      setSuccessPayment({
+        amount: amount,
+        reference_code: data.data.reference_code || `SP-${Date.now()}`,
+        date: new Date().toLocaleDateString('sv-SE') + ', ' + new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+        pickup_date: specialDate,
+        shift: specialShift
+      });
       setSpecialStep('success');
       setMessage("Special Pickup scheduled successfully! Payment processed via secure gateway.");
       fetchResidentProfile();
@@ -1420,6 +1431,13 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
           { id: Date.now(), reference_code: mockRef, amount: amount, status: 'paid', payment_type: 'special_pickup', notes: `Special removal: ${specialCategory} (${specialDescription})`, paid_at: new Date().toISOString() },
           ...payments
         ]);
+        setSuccessPayment({
+          amount: amount,
+          reference_code: mockRef,
+          date: new Date().toLocaleDateString('sv-SE') + ', ' + new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+          pickup_date: specialDate,
+          shift: specialShift
+        });
         setSpecialStep('success');
         setMessage(`Special Pickup logged successfully in sandbox mode. Invoice Reference: ${mockRef}. LKR ${amount.toLocaleString()} paid.`);
       }
@@ -1761,7 +1779,7 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
                   {specialStep === 'form' && 'Special Pickup › New request'}
                   {specialStep === 'estimate' && 'Special Pickup › Estimate'}
                   {specialStep === 'checkout' && 'Special Pickup › Secure checkout'}
-                  {specialStep === 'success' && 'Transaction #TXN-294821'}
+                  {specialStep === 'success' && `Transaction #${successPayment?.reference_code || 'TXN-294821'}`}
                   {specialStep === 'failed' && 'Card declined'}
                   {specialStep === 'receipt' && 'Payments › Receipt'}
                 </span>
@@ -1771,7 +1789,7 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
                   {specialStep === 'checkout' && 'Payment'}
                   {specialStep === 'success' && 'Payment successful'}
                   {specialStep === 'failed' && 'Payment failed'}
-                  {specialStep === 'receipt' && 'Receipt #R-294821'}
+                  {specialStep === 'receipt' && `Receipt #${successPayment?.reference_code || 'R-294821'}`}
                 </h1>
               </div>
             ) : activeTab === 'billing' ? (
@@ -3835,19 +3853,26 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
                   <div className="bg-[#FAFDFB] border border-gray-150 p-5 rounded-2xl space-y-3.5 text-xs text-gray-700 font-semibold font-sans">
                     <div className="flex items-center justify-between">
                       <span className="text-gray-400 uppercase font-black text-[9px] tracking-wider font-sans">Amount</span>
-                      <span className="font-mono font-black text-gray-950">LKR 2,800.00</span>
+                      <span className="font-mono font-black text-gray-950">LKR {successPayment?.amount?.toLocaleString() || '2,800'}.00</span>
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-gray-400 uppercase font-black text-[9px] tracking-wider font-sans">Transaction</span>
-                      <span className="font-mono font-black text-emerald-850 font-sans">#TXN-294821</span>
+                      <span className="font-mono font-black text-emerald-850 font-sans">#{successPayment?.reference_code || 'TXN-294821'}</span>
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-gray-400 uppercase font-black text-[9px] tracking-wider font-sans">Date</span>
-                      <span className="font-mono font-black text-gray-950">2026-05-10, 10:42 AM</span>
+                      <span className="font-mono font-black text-gray-950">{successPayment?.date || '2026-07-16, 10:42 AM'}</span>
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-gray-400 uppercase font-black text-[9px] tracking-wider font-sans">Pickup</span>
-                      <span className="font-mono font-black text-gray-950">13 May, 9:00 AM</span>
+                      <span className="font-mono font-black text-gray-950">
+                        {successPayment
+                          ? `${successPayment.pickup_date}, ${
+                              successPayment.shift === 'morning' ? 'Morning Shift (6 AM - 2 PM)' :
+                              successPayment.shift === 'evening' ? 'Evening Shift (2 PM - 10 PM)' : 'Night Shift (10 PM - 6 AM)'
+                            }`
+                          : '13 May, 9:00 AM'}
+                      </span>
                     </div>
                   </div>
 
@@ -3985,7 +4010,7 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
                       <div className="grid grid-cols-2 md:grid-cols-3 gap-y-4 gap-x-2 text-xs font-semibold text-gray-600 font-sans">
                         <div>
                           <span className="block text-[9px] uppercase font-black text-gray-400 tracking-wider">Receipt no.</span>
-                          <span className="font-mono font-black text-gray-900 block mt-0.5">R-294821</span>
+                          <span className="font-mono font-black text-gray-900 block mt-0.5">{successPayment?.reference_code || 'R-294821'}</span>
                         </div>
                         <div>
                           <span className="block text-[9px] uppercase font-black text-gray-400 tracking-wider">Resident</span>
@@ -3997,7 +4022,7 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
                         </div>
                         <div>
                           <span className="block text-[9px] uppercase font-black text-gray-400 tracking-wider">Date</span>
-                          <span className="font-mono font-black text-gray-900 block mt-0.5">{specialDate || '2026-05-13'}, 10:42 AM</span>
+                          <span className="font-mono font-black text-gray-900 block mt-0.5">{successPayment?.date || `${specialDate}, 10:42 AM`}</span>
                         </div>
                         <div>
                           <span className="block text-[9px] uppercase font-black text-gray-400 tracking-wider">Method</span>
