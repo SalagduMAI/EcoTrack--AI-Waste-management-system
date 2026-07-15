@@ -717,7 +717,13 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
           // Sync simulation/display mode to match database status
           const next = dashData.data.next_pickup;
           if (next) {
-            const todayStr = getLocalDateString();
+            const now = new Date();
+            let todayStr = getLocalDateString(now);
+            if (now.getHours() < 6) {
+              const yesterday = new Date(now);
+              yesterday.setDate(yesterday.getDate() - 1);
+              todayStr = getLocalDateString(yesterday);
+            }
             const isToday = next.scheduled_date === todayStr;
             if (isToday) {
               const nowHour = new Date().getHours();
@@ -991,7 +997,15 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
 
   // Dynamic Calculations for World-Class Premium Experience
   const completedJobs = historyItems.filter((item: any) => item.type === 'Done');
-  const todayLocalDateStr = getLocalDateString(new Date());
+  const todayLocalDateStr = (() => {
+    const d = new Date();
+    if (d.getHours() < 6) {
+      const yesterday = new Date(d);
+      yesterday.setDate(yesterday.getDate() - 1);
+      return getLocalDateString(yesterday);
+    }
+    return getLocalDateString(d);
+  })();
   const isTodayCollectionDone = historyItems.some((item: any) => {
     return item.date === todayLocalDateStr && item.type === 'Done';
   });
