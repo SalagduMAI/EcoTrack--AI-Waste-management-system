@@ -1218,6 +1218,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
           related_job_code: c.job ? `#J-${c.job.id} • ${c.unit ? c.unit.unit_number : 'N/A'}` : (c.related_job_code || null),
           related_job_worker: c.job?.worker ? c.job.worker.name : (c.related_job_worker || null),
           related_job_status: c.job ? c.job.status : (c.related_job_status || null),
+          related_job_date: c.job ? c.job.scheduled_date : (c.related_job_date || null),
         }));
         setComplaints(localComplaints);
       } else {
@@ -8573,53 +8574,56 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                       </div>
 
                       {/* Card 2: Related Job Details */}
-                      <div className="bg-white border border-gray-150 rounded-3xl p-5 shadow-xs text-left space-y-4" id="complaint-related-job">
+                      {selectedComplaint.related_job_code && (
+                        <div className="bg-white border border-gray-150 rounded-3xl p-5 shadow-xs text-left space-y-4" id="complaint-related-job">
 
-                        <div>
-                          <span className="text-[10px] font-mono text-gray-400 font-extrabold uppercase tracking-widest block">Related Job</span>
-                        </div>
+                          <div>
+                            <span className="text-[10px] font-mono text-gray-400 font-extrabold uppercase tracking-widest block">Related Job</span>
+                          </div>
 
-                        {/* Job details box */}
-                        <div className="bg-slate-50/50 border border-gray-150 rounded-2xl p-4 space-y-3">
-                          <div className="flex justify-between items-start">
-                            <div>
-                              <span className="text-[11.5px] font-mono font-black text-[#2E7D32]">
-                                {selectedComplaint.related_job_code || '#J-2817 • B-204'}
-                              </span>
-                              <span className="text-[10px] text-gray-400 font-extrabold block mt-0.5">
-                                {selectedComplaint.related_job_worker || 'Nimal P.'}
-                              </span>
+                          {/* Job details box */}
+                          <div className="bg-slate-50/50 border border-gray-150 rounded-2xl p-4 space-y-3">
+                            <div className="flex justify-between items-start">
+                              <div>
+                                <span className="text-[11.5px] font-mono font-black text-[#2E7D32]">
+                                  {selectedComplaint.related_job_code}
+                                </span>
+                                <span className="text-[10px] text-gray-400 font-extrabold block mt-0.5">
+                                  {selectedComplaint.related_job_worker || 'N/A'}
+                                </span>
+                              </div>
+
+                              {/* Dynamic job status bullet badge */}
+                              {(() => {
+                                const rawStatus = selectedComplaint.related_job_status || 'issue';
+                                const isDone = rawStatus === 'done';
+                                const isProgress = rawStatus === 'in_progress';
+                                const jobStatusLabel = rawStatus === 'done' ? 'Completed' : (rawStatus === 'in_progress' ? 'In Progress' : (rawStatus === 'pending' ? 'Pending' : 'Issue'));
+
+                                return (
+                                  <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[9px] font-black leading-none uppercase tracking-wider ${isDone
+                                    ? 'bg-[#E8F5E9] text-[#2E7D32]'
+                                    : isProgress
+                                      ? 'bg-blue-50 text-blue-700 border border-blue-100'
+                                      : 'bg-rose-50 text-rose-700 border border-rose-100'
+                                    }`}>
+                                    <span className={`w-1 h-1 rounded-full shrink-0 ${isDone ? 'bg-[#2E7D32]' : isProgress ? 'bg-blue-600' : 'bg-rose-600'
+                                      }`}></span>
+                                    <span>{jobStatusLabel}</span>
+                                  </span>
+                                );
+                              })()}
                             </div>
 
-                            {/* Dynamic job status bullet badge */}
-                            {(() => {
-                              const jobStatus = selectedComplaint.related_job_status || 'Issue';
-                              const isDone = jobStatus === 'Completed';
-                              const isProgress = jobStatus === 'In Progress';
+                            <div className="border-t border-gray-100 pt-2 flex justify-between items-center text-[10px] text-gray-400 font-bold">
+                              <span>Dispatch Date</span>
+                              <span className="text-gray-700">{selectedComplaint.related_job_date || 'N/A'}</span>
+                            </div>
 
-                              return (
-                                <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[9px] font-black leading-none uppercase tracking-wider ${isDone
-                                  ? 'bg-[#E8F5E9] text-[#2E7D32]'
-                                  : isProgress
-                                    ? 'bg-blue-50 text-blue-700 border border-blue-100'
-                                    : 'bg-rose-50 text-rose-700 border border-rose-100'
-                                  }`}>
-                                  <span className={`w-1 h-1 rounded-full shrink-0 ${isDone ? 'bg-[#2E7D32]' : isProgress ? 'bg-blue-600' : 'bg-rose-600'
-                                    }`}></span>
-                                  <span>{jobStatus}</span>
-                                </span>
-                              );
-                            })()}
-                          </div>
-
-                          <div className="border-t border-gray-100 pt-2 flex justify-between items-center text-[10px] text-gray-400 font-bold">
-                            <span>Dispatch Date</span>
-                            <span className="text-gray-700">{selectedComplaint.related_job_date || '2026-05-09'}</span>
                           </div>
 
                         </div>
-
-                      </div>
+                      )}
 
                     </div>
 
