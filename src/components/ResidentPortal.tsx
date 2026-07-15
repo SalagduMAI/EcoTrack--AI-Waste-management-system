@@ -723,7 +723,11 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
               if (next.status === 'in_progress') {
                 setHomeSimulationMode('active_tracker');
               } else if (next.status === 'pending') {
-                setHomeSimulationMode('pending_job');
+                if (next.worker && next.worker.shift_timer_paused === false) {
+                  setHomeSimulationMode('active_tracker');
+                } else {
+                  setHomeSimulationMode('pending_job');
+                }
               } else if (next.status === 'done') {
                 setHomeSimulationMode('normal_caught_up');
               }
@@ -2477,7 +2481,22 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
                         }`}
                       >
                         <Clock className={`w-4 h-4 ${isReminderSet ? 'text-[#1E4D2B]' : 'text-gray-400'}`} />
-                        <span>{isReminderSet ? '2 days • reminder set' : 'Toggle reminder'}</span>
+                        <span>
+                          {isReminderSet ? (() => {
+                            const nextDateStr = unitProfile?.next_pickup?.scheduled_date;
+                            if (!nextDateStr) return 'Reminder set';
+                            const today = new Date();
+                            today.setHours(0, 0, 0, 0);
+                            const target = new Date(nextDateStr);
+                            target.setHours(0, 0, 0, 0);
+                            const diffTime = target.getTime() - today.getTime();
+                            const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+                            if (diffDays === 0) return 'Today • reminder set';
+                            if (diffDays === 1) return 'Tomorrow • reminder set';
+                            if (diffDays < 0) return 'Passed • reminder set';
+                            return `${diffDays} days • reminder set`;
+                          })() : 'Toggle reminder'}
+                        </span>
                       </button>
                     )}
                   </div>

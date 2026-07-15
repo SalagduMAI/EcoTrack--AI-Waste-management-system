@@ -154,11 +154,13 @@ class ResidentController extends Controller
                     'worker' => ($nextJob && $nextJob->worker) ? [
                         'name' => $nextJob->worker->name,
                         'phone' => $nextJob->worker->phone,
-                        'photo' => $nextJob->worker->profile_photo_path ? asset('storage/' . $nextJob->worker->profile_photo_path) : null
+                        'photo' => $nextJob->worker->profile_photo_path ? asset('storage/' . $nextJob->worker->profile_photo_path) : null,
+                        'shift_timer_paused' => (bool)$nextJob->worker->shift_timer_paused
                     ] : ($assignedWorkerModel ? [
                         'name' => $assignedWorkerModel->name,
                         'phone' => $assignedWorkerModel->phone,
-                        'photo' => $assignedWorkerModel->profile_photo_path ? asset('storage/' . $assignedWorkerModel->profile_photo_path) : null
+                        'photo' => $assignedWorkerModel->profile_photo_path ? asset('storage/' . $assignedWorkerModel->profile_photo_path) : null,
+                        'shift_timer_paused' => (bool)$assignedWorkerModel->shift_timer_paused
                     ] : null)
                 ] : null,
                 'recent_pickups' => $recentJobsFinished
