@@ -4466,17 +4466,16 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
                         return filtered.map((item, index) => {
                           const formattedDate = item.scheduled_date || getLocalDateString();
                           
-                          // Extract time format, e.g. "6:35 AM"
-                          let timeStr = '6:35 AM';
+                          let timeStr = 'Morning';
                           if (item.completed_at) {
                             try {
                               const d = new Date(item.completed_at);
                               timeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                             } catch {
-                              timeStr = item.scheduled_time || '6:35 AM';
+                              timeStr = item.shift ? (item.shift.charAt(0).toUpperCase() + item.shift.slice(1)) : 'Morning';
                             }
                           } else {
-                            timeStr = item.scheduled_time || '6:35 AM';
+                            timeStr = item.shift ? (item.shift.charAt(0).toUpperCase() + item.shift.slice(1)) : 'Morning';
                           }
 
                           return (
