@@ -468,6 +468,95 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
     }
   }, [activeTab]);
 
+  // Real-time canvas QR code scanner loop using CDN jsQR
+  useEffect(() => {
+    let active = true;
+    let loopId: number;
+
+    const runScanner = async () => {
+      const jsQR = await new Promise<any>((resolve) => {
+        if ((window as any).jsQR) {
+          resolve((window as any).jsQR);
+          return;
+        }
+        const script = document.createElement('script');
+        script.src = 'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js';
+        script.onload = () => resolve((window as any).jsQR);
+        script.onerror = () => resolve(null);
+        document.head.appendChild(script);
+      });
+
+      if (!jsQR) {
+        console.warn("jsQR failed to load");
+        return;
+      }
+
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+
+      const scanFrame = () => {
+        if (!active) return;
+
+        if (
+          videoRef.current && 
+          videoRef.current.readyState === videoRef.current.HAVE_ENOUGH_DATA && 
+          activeTab === 'scan' &&
+          (activeCaptureMethod === 'webcam' || activeCaptureMethod === 'phone')
+        ) {
+          canvas.width = videoRef.current.videoWidth;
+          canvas.height = videoRef.current.videoHeight;
+          if (ctx) {
+            ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const code = jsQR(imageData.data, imageData.width, imageData.height, {
+              inversionAttempts: "dontInvert",
+            });
+
+            if (code && code.data) {
+              const scannedHash = code.data;
+              console.log("Scanned hash:", scannedHash);
+              
+              let matchedJob = tasks.find(t => 
+                (t.unit?.qr_code_hash === scannedHash || t.floor?.qr_code_hash === scannedHash) &&
+                t.status !== 'done'
+              );
+
+              if (matchedJob) {
+                handleQRScanSubmit(undefined, matchedJob.id, scannedHash);
+                active = false;
+                setTimeout(() => { active = true; }, 3000);
+              } else {
+                if (selectedScanJobId) {
+                  const selectedJob = tasks.find(t => t.id === selectedScanJobId);
+                  if (selectedJob) {
+                    const expectedHash = selectedJob.unit?.qr_code_hash || selectedJob.floor?.qr_code_hash;
+                    if (expectedHash === scannedHash) {
+                      handleQRScanSubmit(undefined, selectedJob.id, scannedHash);
+                      active = false;
+                      setTimeout(() => { active = true; }, 3000);
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+        loopId = requestAnimationFrame(scanFrame);
+      };
+
+      loopId = requestAnimationFrame(scanFrame);
+    };
+
+    if (activeTab === 'scan' && (activeCaptureMethod === 'webcam' || activeCaptureMethod === 'phone')) {
+      runScanner();
+    }
+
+    return () => {
+      active = false;
+      cancelAnimationFrame(loopId);
+    };
+  }, [activeTab, activeCaptureMethod, tasks, selectedScanJobId]);
+
   const saveShiftTimerToServer = async (seconds?: number, paused?: boolean, startTime?: string | null) => {
     if (!token) return;
 
@@ -3819,7 +3908,7 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
                             }`}
                           >
                             <Smartphone className={`w-4 h-4 ${activeCaptureMethod === 'phone' ? 'text-[#1E4D2B]' : 'text-slate-400'}`} />
-                            <span>Phone companion</span>
+                            <span>Phone camera (Rear)</span>
                           </button>
 
                           <button
@@ -3892,7 +3981,7 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
                   ) : (
                     /* Dynamic view contents corresponding to each active scan mode */
                     <div className="absolute inset-0 z-10 flex flex-col justify-between overflow-hidden">
-                      {activeCaptureMethod === 'webcam' && (
+                      {(activeCaptureMethod === 'webcam' || activeCaptureMethod === 'phone') && (
                         <div 
                           onClick={() => {
                             if (!selectedScanJobId) {
@@ -3906,11 +3995,11 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
                             }
                           }}
                           className="w-full h-full flex flex-col items-center justify-center relative p-6 cursor-pointer select-none"
-                          title="Click within viewfinder frame to capture and scan"
+                          title="Align QR code inside brackets to scan automatically, or click to simulate scan"
                         >
                           <span className="absolute top-4 left-6 text-[10px] font-black tracking-widest text-[#34D399] flex items-center gap-1.5 uppercase">
                             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping inline-block" />
-                            Live Desktop Webcam Feed • Active
+                            {activeCaptureMethod === 'phone' ? 'Live Phone Camera Feed • Active' : 'Live Desktop Webcam Feed • Active'}
                           </span>
 
                           {/* Task Selector Overlay */}
@@ -3963,76 +4052,8 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
                           </div>
 
                           <span className="text-gray-400 text-[10px] font-extrabold tracking-widest uppercase mt-6 bg-black/50 px-3.5 py-1 rounded-full border border-gray-800">
-                            Click Anywhere in viewport to Perform Scan
+                            Hold QR Code to Camera to Scan or Click Viewport to Simulate
                           </span>
-                        </div>
-                      )}
-
-                      {activeCaptureMethod === 'phone' && (
-                        <div className="w-full h-full flex flex-col items-center justify-around p-8 select-none bg-[#050D08]">
-                          <div className="w-full flex justify-between items-center text-[10px] font-black text-gray-400 tracking-wider">
-                            <span className="flex items-center gap-1.5 uppercase">
-                              <Smartphone className="w-3.5 h-3.5 text-emerald-400 animate-bounce" />
-                              EcoTrack Companion Link
-                            </span>
-                            <span className="text-amber-500 px-2.5 py-0.5 bg-amber-500/10 border border-amber-500/20 rounded-full font-extrabold animate-pulse">
-                              WAITING FOR CLIENT STREAM
-                            </span>
-                          </div>
-
-                          {/* Task Selector for Phone Mode */}
-                          <div className="w-full max-w-xs bg-black/60 p-3.5 rounded-2xl border border-emerald-950 text-left my-2">
-                            <label className="block text-[8.5px] font-black uppercase text-emerald-400 mb-1.5">Select Target Unit:</label>
-                            <select
-                              value={selectedScanJobId || ''}
-                              onChange={(e) => setSelectedScanJobId(Number(e.target.value))}
-                              className="w-full bg-[#050D08] text-[#a7f3d0] rounded-xl p-2.5 text-xs font-bold border border-emerald-950 focus:outline-none cursor-pointer"
-                            >
-                              <option value="">-- Choose Assigned Task --</option>
-                              {tasks.filter(t => t.status !== 'done').map(t => (
-                                <option key={t.id} value={t.id}>
-                                  {t.block?.name} • Floor {t.floor?.floor_number} • Apt {t.unit?.unit_number || 'Corridor'}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-
-                          <div className="max-w-md mx-auto space-y-4 my-auto text-center">
-                            {/* visual QR Sync sticker */}
-                            <div className="p-4 bg-white rounded-3xl inline-block shadow-lg border border-emerald-900/15">
-                              <QrCode className="w-20 h-20 text-emerald-950 stroke-[1.75]" />
-                            </div>
-
-                            <div className="space-y-1">
-                              <h4 className="text-xs font-black text-gray-200 uppercase tracking-wide">Smartphone QR Companion Pairing</h4>
-                              <p className="text-[10px] text-gray-400/90 leading-relaxed max-w-xs mx-auto">
-                                Open {localUser?.name || 'Kamal'}'s EcoTrack companion application, select companion mode and aim your smartphone camera at this screen to instantly stream verification.
-                              </p>
-                            </div>
-
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (!selectedScanJobId) {
-                                  setMessage({ text: 'Please select a target assigned task from the dropdown first.', type: 'warn' });
-                                  return;
-                                }
-                                const targetJob = tasks.find(t => t.id === selectedScanJobId);
-                                if (targetJob) {
-                                  const hash = targetJob.unit?.qr_code_hash || targetJob.floor?.qr_code_hash || 'QR-CODE-NOT-FOUND';
-                                  handleQRScanSubmit(undefined, targetJob.id, hash);
-                                }
-                              }}
-                              className="bg-[#1E4D2B] border border-emerald-500/35 text-white hover:bg-emerald-800 font-extrabold text-[10px] uppercase tracking-wider px-4.5 py-2.5 rounded-xl cursor-pointer shadow-md transition-all flex items-center gap-1.5 mx-auto"
-                            >
-                              <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-ping" />
-                              Simulate Companion Link
-                            </button>
-                          </div>
-
-                          <div className="text-[9px] text-gray-650 font-black uppercase tracking-widest leading-none">
-                            PAIR CODE: ECO-SYNC-814-{(localUser?.name || 'Kamal').split(' ')[0].toUpperCase()}
-                          </div>
                         </div>
                       )}
 
