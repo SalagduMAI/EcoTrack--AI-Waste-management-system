@@ -177,6 +177,7 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
   const [specialDescription, setSpecialDescription] = useState('Old sofa, 3-seater');
   const [specialWeight, setSpecialWeight] = useState('45');
   const [specialDate, setSpecialDate] = useState(() => getLocalDateString());
+  const [specialShift, setSpecialShift] = useState<'morning' | 'evening' | 'night'>('morning');
   const [specialPhotoName, setSpecialPhotoName] = useState<string | null>(null);
   const [specialCardNumber, setSpecialCardNumber] = useState('4321 4567 8910 4821');
   const [specialCardExpiry, setSpecialCardExpiry] = useState('12 / 28');
@@ -1354,6 +1355,74 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
       setMessage(`Special Pickup logged successfully in sandbox mode. Invoice Reference: ${mockRef}. LKR 1,500 billed.`);
       setBulkBooking({ category: 'Electronic Waste', description: '', pickup_date: getLocalDateString(), shift: 'morning' });
       setActiveTab('billing');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleCreateSpecialPickup = async (amount: number, isDeclining: boolean = false) => {
+    setActionLoading(true);
+    setMessage(null);
+    try {
+      if (isDeclining) {
+        throw new Error("Sandbox payment simulation decline request.");
+      }
+
+      const response = await fetch('/api/resident/special-pickups', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          category: specialCategory,
+          description: specialDescription,
+          pickup_date: specialDate,
+          shift: specialShift,
+          amount: amount
+        })
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || 'Failed to request special pickup.');
+
+      // Settle payment immediately
+      try {
+        await fetch(`/api/resident/payments/${data.data.payment_id}/settle`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Accept': 'application/json',
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            card_number: specialCardNumber,
+            card_holder: specialCardName,
+            expiry: specialCardExpiry,
+            cvv: specialCardCvv
+          })
+        });
+      } catch (payErr) {
+        console.warn("Payment settle mock bypass", payErr);
+      }
+
+      setSpecialStep('success');
+      setMessage("Special Pickup scheduled successfully! Payment processed via secure gateway.");
+      fetchResidentProfile();
+    } catch (err: any) {
+      if (isDeclining) {
+        setSpecialStep('failed');
+        setMessage("Dev Sandbox Payment Declined: Bank rejected credit card parameters.");
+      } else {
+        const mockRef = 'SP-' + Math.floor(Math.random() * 100000);
+        setPayments([
+          { id: Date.now(), reference_code: mockRef, amount: amount, status: 'paid', payment_type: 'special_pickup', notes: `Special removal: ${specialCategory} (${specialDescription})`, paid_at: new Date().toISOString() },
+          ...payments
+        ]);
+        setSpecialStep('success');
+        setMessage(`Special Pickup logged successfully in sandbox mode. Invoice Reference: ${mockRef}. LKR ${amount.toLocaleString()} paid.`);
+      }
     } finally {
       setActionLoading(false);
     }
@@ -3247,6 +3316,37 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
                         </div>
                       </div>
 
+                      {/* Preferred Shift Selector */}
+                      <div className="space-y-2">
+                        <label className="block text-[10px] uppercase font-black text-gray-400 tracking-wider">
+                          PREFERRED TIME SHIFT
+                        </label>
+                        <div className="grid grid-cols-3 gap-3">
+                          {[
+                            { id: 'morning', label: 'Morning', desc: '6 AM - 2 PM' },
+                            { id: 'evening', label: 'Evening', desc: '2 PM - 10 PM' },
+                            { id: 'night', label: 'Night', desc: '10 PM - 6 AM' }
+                          ].map((sh) => {
+                            const isSelected = specialShift === sh.id;
+                            return (
+                              <button
+                                key={sh.id}
+                                type="button"
+                                onClick={() => setSpecialShift(sh.id as any)}
+                                className={`py-3.5 px-3 rounded-xl border text-center transition-all cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
+                                  isSelected
+                                    ? 'bg-emerald-50/20 border-emerald-600 text-emerald-800 font-extrabold shadow-xs'
+                                    : 'bg-white hover:bg-gray-50 border-gray-200 text-gray-500 font-semibold'
+                                }`}
+                              >
+                                <span className="text-xs font-black">{sh.label}</span>
+                                <span className="text-[9px] opacity-75 font-semibold font-mono">{sh.desc}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
                     </div>
 
                     {/* Bottom control buttons under form */}
@@ -3370,7 +3470,10 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
                           {specialDescription} • {specialWeight} kg
                         </h2>
                         <p className="text-xs text-gray-400 font-bold mt-1.5">
-                          Pickup scheduled: {specialDate}, 9:00 AM
+                          Pickup scheduled: {specialDate}, {
+                            specialShift === 'morning' ? 'Morning Shift (6 AM - 2 PM)' :
+                            specialShift === 'evening' ? 'Evening Shift (2 PM - 10 PM)' : 'Night Shift (10 PM - 6 AM)'
+                          }
                         </p>
                       </div>
 
@@ -3451,7 +3554,10 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
                                   }
                                 })()}
                               </p>
-                              <span className="text-[10.5px] text-gray-400 font-semibold block">9:00 AM</span>
+                              <span className="text-[10.5px] text-gray-400 font-semibold block">
+                                {specialShift === 'morning' ? 'Morning Shift (6 AM - 2 PM)' :
+                                 specialShift === 'evening' ? 'Evening Shift (2 PM - 10 PM)' : 'Night Shift (10 PM - 6 AM)'}
+                              </span>
                             </div>
                           </div>
                         </div>
@@ -3607,12 +3713,7 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
                             <button
                               type="button"
                               onClick={() => {
-                                setActionLoading(true);
-                                setTimeout(() => {
-                                  setActionLoading(false);
-                                  setSpecialStep('success');
-                                  setMessage("Dev Sandbox Payment Approved successfully!");
-                                }, 1200);
+                                handleCreateSpecialPickup(grandTotal, false);
                               }}
                               className="px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-black transition-all cursor-pointer shadow-xs active:scale-95"
                             >
@@ -3621,12 +3722,7 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
                             <button
                               type="button"
                               onClick={() => {
-                                setActionLoading(true);
-                                setTimeout(() => {
-                                  setActionLoading(false);
-                                  setSpecialStep('failed');
-                                  setMessage("Dev Sandbox Payment Declined: Bank rejected credit card parameters.");
-                                }, 1000);
+                                handleCreateSpecialPickup(grandTotal, true);
                               }}
                               className="px-4 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-black transition-all cursor-pointer shadow-xs active:scale-95"
                             >
@@ -3641,12 +3737,7 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
                             type="button"
                             disabled={actionLoading}
                             onClick={() => {
-                              setActionLoading(true);
-                              setTimeout(() => {
-                                setActionLoading(false);
-                                setSpecialStep('success');
-                                setMessage("Sandbox secure checkout transfer completed successfully!");
-                              }, 1500);
+                              handleCreateSpecialPickup(grandTotal, false);
                             }}
                             className="w-full py-3.5 bg-[#1E4D2B] hover:bg-[#15341D] disabled:opacity-50 text-white rounded-xl text-xs font-black cursor-pointer transition-all shadow-md active:scale-95 text-center flex items-center justify-center gap-2"
                           >

@@ -882,6 +882,7 @@ Conversational Thread History:
             'description' => 'required|string|min:4',
             'pickup_date' => 'required|date|after_or_equal:today',
             'shift' => 'required|in:morning,evening,night',
+            'amount' => 'nullable|numeric|min:0',
         ]);
 
         if ($validator->fails()) {
@@ -892,8 +893,8 @@ Conversational Thread History:
             ], 422);
         }
 
-        // Special pickups carry a dynamic service fee of LKR 1500
-        $fee = 1500.00;
+        // Special pickups carry a dynamic service fee calculated by client
+        $fee = floatval($request->input('amount') ?? 1500.00);
         $refCode = sprintf('SP-%s-%s', Carbon::now()->format('Ymd'), Str::upper(Str::random(5)));
 
         // Create billing invoice record
