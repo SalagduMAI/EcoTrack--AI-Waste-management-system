@@ -77,6 +77,16 @@ const renderRatingTrendBadge = (trend: string) => {
   );
 };
 
+const parseServerDate = (dateStr: string | null): Date | null => {
+  if (!dateStr) return null;
+  let formatted = dateStr;
+  if (formatted.includes(' ') && !formatted.includes('T')) {
+    formatted = formatted.replace(' ', 'T');
+  }
+  const parsed = new Date(formatted);
+  return isNaN(parsed.getTime()) ? null : parsed;
+};
+
 export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: WorkerPortalProps) {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'tasks' | 'scan' | 'history' | 'notifications' | 'offline' | 'profile' | 'settings'>('dashboard');
   const [settingsSubTab, setSettingsSubTab] = useState<'profile' | 'security' | 'help'>('profile');
@@ -584,11 +594,30 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
   // Check if shift has changed, ended, or date has changed
   useEffect(() => {
     const outsideHours = !isWithinShiftHours();
-    const shiftStart = shiftStartTime ? new Date(shiftStartTime) : null;
-    const hoursElapsed = shiftStart ? (new Date().getTime() - shiftStart.getTime()) / (1000 * 3600) : 0;
-    const isPastShift = hoursElapsed > 12;
+    
+    const now = new Date();
+    const todayStr = getLocalDateString(now);
 
-    if (outsideHours || isPastShift) {
+    const yesterday = new Date(now);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = getLocalDateString(yesterday);
+
+    let shiftDateStr: string | null = null;
+    if (shiftStartTime) {
+      const parsedStart = parseServerDate(shiftStartTime);
+      if (parsedStart) {
+        shiftDateStr = getLocalDateString(parsedStart);
+      }
+    }
+
+    const isNightShift = (localUser?.shift || '').toLowerCase().includes('night');
+    const isDifferentDay = shiftDateStr
+      ? (isNightShift
+          ? (shiftDateStr !== todayStr && shiftDateStr !== yesterdayStr)
+          : (shiftDateStr !== todayStr))
+      : false;
+
+    if (outsideHours || isDifferentDay) {
       localStorage.removeItem('ecotrack_shift_timer_seconds');
       localStorage.removeItem('ecotrack_shift_timer_paused');
       localStorage.removeItem('ecotrack_shift_start_time');
@@ -985,9 +1014,28 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
           }
 
           const rawServerStartTime = nextStats.user.shift_start_time;
-          const serverStart = rawServerStartTime ? new Date(rawServerStartTime) : null;
-          const serverHoursElapsed = serverStart ? (new Date().getTime() - serverStart.getTime()) / (1000 * 3600) : 0;
-          const isServerDifferentDay = serverHoursElapsed > 12;
+          
+          const now = new Date();
+          const todayStr = getLocalDateString(now);
+
+          const yesterday = new Date(now);
+          yesterday.setDate(yesterday.getDate() - 1);
+          const yesterdayStr = getLocalDateString(yesterday);
+
+          let serverDateStr: string | null = null;
+          if (rawServerStartTime) {
+            const parsedStart = parseServerDate(rawServerStartTime);
+            if (parsedStart) {
+              serverDateStr = getLocalDateString(parsedStart);
+            }
+          }
+
+          const isNightShift = (nextStats.user.shift || '').toLowerCase().includes('night');
+          const isServerDifferentDay = serverDateStr
+            ? (isNightShift
+                ? (serverDateStr !== todayStr && serverDateStr !== yesterdayStr)
+                : (serverDateStr !== todayStr))
+            : false;
 
           const serverSec = isServerDifferentDay ? 0 : parseInt(nextStats.user.shift_timer_seconds || '0', 10);
           const serverPaused = isServerDifferentDay ? true : (nextStats.user.shift_timer_paused === true || nextStats.user.shift_timer_paused === 'true' || nextStats.user.shift_timer_paused === 1);
@@ -1011,7 +1059,11 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
             }
           }
 
-          if (currentLocalStartTime !== serverStartTime) {
+          const localParsed = parseServerDate(currentLocalStartTime);
+          const serverParsed = parseServerDate(serverStartTime);
+          const isStartTimeDifferent = (localParsed ? localParsed.getTime() : 0) !== (serverParsed ? serverParsed.getTime() : 0);
+
+          if (isStartTimeDifferent) {
             setShiftStartTime(serverStartTime);
             if (isServerDifferentDay) {
               saveShiftTimerToServer(0, true, null);
