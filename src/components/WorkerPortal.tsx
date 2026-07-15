@@ -2477,7 +2477,8 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
                                 timeStr = '--:--';
                               } else {
                                 try {
-                                  const [startH, startM] = shiftStartTime.split(':').map(Number);
+                                  const timePart = formatTimeOnly(shiftStartTime);
+                                  const [startH, startM] = timePart.split(':').map(Number);
                                   const totalStartMinutes = startH * 60 + startM;
                                   const estMinutes = totalStartMinutes + (idx + 1) * 12;
                                   const estHour = Math.floor(estMinutes / 60) % 24;
