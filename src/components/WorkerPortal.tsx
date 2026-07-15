@@ -381,7 +381,7 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
     } else if (shift.includes('night')) {
       return hours >= 22 || hours < 6;
     } else {
-      return hours >= 8 && hours < 14;
+      return hours >= 6 && hours < 14;
     }
   };
 
@@ -583,12 +583,12 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
 
   // Check if shift has changed, ended, or date has changed
   useEffect(() => {
-    const todayStr = new Date().toISOString().split('T')[0];
-    const shiftDateStr = shiftStartTime ? shiftStartTime.split('T')[0] : null;
-    const isDifferentDay = shiftDateStr && shiftDateStr !== todayStr;
     const outsideHours = !isWithinShiftHours();
+    const shiftStart = shiftStartTime ? new Date(shiftStartTime) : null;
+    const hoursElapsed = shiftStart ? (new Date().getTime() - shiftStart.getTime()) / (1000 * 3600) : 0;
+    const isPastShift = hoursElapsed > 12;
 
-    if (outsideHours || isDifferentDay) {
+    if (outsideHours || isPastShift) {
       localStorage.removeItem('ecotrack_shift_timer_seconds');
       localStorage.removeItem('ecotrack_shift_timer_paused');
       localStorage.removeItem('ecotrack_shift_start_time');
@@ -984,9 +984,10 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
             });
           }
 
-          const todayStr = new Date().toISOString().split('T')[0];
           const rawServerStartTime = nextStats.user.shift_start_time;
-          const isServerDifferentDay = rawServerStartTime && rawServerStartTime.split('T')[0] !== todayStr;
+          const serverStart = rawServerStartTime ? new Date(rawServerStartTime) : null;
+          const serverHoursElapsed = serverStart ? (new Date().getTime() - serverStart.getTime()) / (1000 * 3600) : 0;
+          const isServerDifferentDay = serverHoursElapsed > 12;
 
           const serverSec = isServerDifferentDay ? 0 : parseInt(nextStats.user.shift_timer_seconds || '0', 10);
           const serverPaused = isServerDifferentDay ? true : (nextStats.user.shift_timer_paused === true || nextStats.user.shift_timer_paused === 'true' || nextStats.user.shift_timer_paused === 1);
