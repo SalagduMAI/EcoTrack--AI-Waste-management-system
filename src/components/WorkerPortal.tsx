@@ -2451,7 +2451,14 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
                     </div>
 
                     <div className="space-y-1">
-                      {tasks.length > 0 ? (
+                      {timerSeconds === 0 && timerPaused ? (
+                        <>
+                          <h2 className="text-xl md:text-2xl font-black tracking-tight">Shift not started</h2>
+                          <p className="text-xs text-emerald-100 font-medium">
+                            Please start the shift timer when you are ready to begin collection duties.
+                          </p>
+                        </>
+                      ) : tasks.length > 0 ? (
                         totalCount > 0 && doneCount === totalCount ? (
                           <>
                             <h2 className="text-xl md:text-2xl font-black tracking-tight">Shift Completed! 🌿</h2>
