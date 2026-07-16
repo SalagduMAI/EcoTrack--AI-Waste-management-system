@@ -149,7 +149,7 @@ class ResidentController extends Controller
             ->take(3)
             ->get();
 
-        $todayJobDone = Job::where(function($q) use ($unit) {
+        $completedTodayJob = Job::with('worker')->where(function($q) use ($unit) {
                 $q->where('unit_id', $unit->id)
                   ->orWhere(function($sq) use ($unit) {
                       $sq->whereNull('unit_id')
@@ -158,9 +158,7 @@ class ResidentController extends Controller
             })
             ->whereDate('scheduled_date', $todayStr)
             ->whereIn('status', ['done', 'issue'])
-            ->exists();
-
-        $fallbackDate = $todayJobDone ? Carbon::parse($todayStr)->addDay()->format('Y-m-d') : Carbon::today()->format('Y-m-d');
+            ->first();
 
         return response()->json([
             'status' => 'success',
@@ -172,22 +170,27 @@ class ResidentController extends Controller
                 'qr_code_hash' => $unit->qr_code_hash,
                 'unpaid_balance_lkr' => $unpaidBalanceSum,
                 'pending_bills_count' => $pendingBillsCount,
-                'next_pickup' => ($nextJob || $assignedWorkerModel) ? [
-                    'scheduled_date' => $nextJob ? $nextJob->scheduled_date->format('Y-m-d') : $fallbackDate,
-                    'shift' => $nextJob ? ucfirst($nextJob->shift) : ucfirst($assignedWorkerModel->shift ?? 'morning'),
-                    'status' => $nextJob ? $nextJob->status : ($todayJobDone ? 'done' : 'pending'),
-                    'worker' => ($nextJob && $nextJob->worker) ? [
+                'next_pickup' => ($nextJob) ? [
+                    'scheduled_date' => $nextJob->scheduled_date->format('Y-m-d'),
+                    'shift' => ucfirst($nextJob->shift),
+                    'status' => $nextJob->status,
+                    'worker' => $nextJob->worker ? [
                         'name' => $nextJob->worker->name,
                         'phone' => $nextJob->worker->phone,
                         'photo' => $nextJob->worker->profile_photo_path ? asset('storage/' . $nextJob->worker->profile_photo_path) : null,
                         'shift_timer_paused' => (bool)$nextJob->worker->shift_timer_paused
-                    ] : ($assignedWorkerModel ? [
-                        'name' => $assignedWorkerModel->name,
-                        'phone' => $assignedWorkerModel->phone,
-                        'photo' => $assignedWorkerModel->profile_photo_path ? asset('storage/' . $assignedWorkerModel->profile_photo_path) : null,
-                        'shift_timer_paused' => (bool)$assignedWorkerModel->shift_timer_paused
-                    ] : null)
-                ] : null,
+                    ] : null
+                ] : ($completedTodayJob ? [
+                    'scheduled_date' => $completedTodayJob->scheduled_date->format('Y-m-d'),
+                    'shift' => ucfirst($completedTodayJob->shift),
+                    'status' => $completedTodayJob->status,
+                    'worker' => $completedTodayJob->worker ? [
+                        'name' => $completedTodayJob->worker->name,
+                        'phone' => $completedTodayJob->worker->phone,
+                        'photo' => $completedTodayJob->worker->profile_photo_path ? asset('storage/' . $completedTodayJob->worker->profile_photo_path) : null,
+                        'shift_timer_paused' => (bool)$completedTodayJob->worker->shift_timer_paused
+                    ] : null
+                ] : null),
                 'recent_pickups' => $recentJobsFinished
             ]
         ]);
