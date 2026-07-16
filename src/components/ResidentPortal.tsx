@@ -4269,8 +4269,8 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
                   })}
                 </div>
 
-                {/* Table Layout */}
-                <div className="overflow-x-auto">
+                {/* Desktop Table View */}
+                <div className="hidden md:block overflow-x-auto">
                   <table className="w-full text-left border-collapse" id="billing-table">
                     <thead>
                       <tr className="border-b border-gray-100 bg-[#F4F8F5]/40 text-[10px] uppercase tracking-wider text-gray-400 font-extrabold select-none">
@@ -4398,6 +4398,112 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
                       })()}
                     </tbody>
                   </table>
+                </div>
+
+                {/* Mobile Cards View */}
+                <div className="block md:hidden divide-y divide-gray-100 bg-white" id="billing-mobile-cards">
+                  {(() => {
+                    const filteredPayments = payments.filter((p) => {
+                      if (searchQuery) {
+                        const q = searchQuery.toLowerCase();
+                        const dateStr = p.date || p.created_at?.slice(0, 10) || '';
+                        const descStr = (p.notes || p.description || '').toLowerCase();
+                        const refStr = (p.reference_code || '').toLowerCase();
+                        if (!dateStr.includes(q) && !descStr.includes(q) && !refStr.includes(q)) {
+                          return false;
+                        }
+                      }
+
+                      if (billingFilter === 'monthly') {
+                        return p.payment_type === 'monthly_fee' || p.notes?.toLowerCase().includes('monthly');
+                      }
+                      if (billingFilter === 'special') {
+                        return p.payment_type === 'special_pickup' || p.notes?.toLowerCase().includes('special');
+                      }
+                      if (billingFilter === 'refunds') {
+                        return p.payment_type === 'refund' || p.notes?.toLowerCase().includes('refund');
+                      }
+                      
+                      return true;
+                    });
+
+                    if (filteredPayments.length === 0) {
+                      return (
+                        <div className="p-8 text-center text-gray-400 font-extrabold text-xs">
+                          No billing transactions matching "{billingFilter}" or search keyword found.
+                        </div>
+                      );
+                    }
+
+                    return filteredPayments.map((p) => {
+                      const isMonthly = p.payment_type === 'monthly_fee' || p.notes?.toLowerCase().includes('monthly');
+                      return (
+                        <div key={p.id} className="p-5 space-y-3.5">
+                          <div className="flex justify-between items-start">
+                            <div className="flex items-center gap-3">
+                              <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                                isMonthly ? 'bg-emerald-50 text-emerald-850' : 'bg-blue-50 text-blue-800'
+                              }`}>
+                                {isMonthly ? (
+                                  <Calendar className="w-4.5 h-4.5 text-emerald-700" />
+                                ) : (
+                                  <Package className="w-4.5 h-4.5 text-blue-700" />
+                                )}
+                              </div>
+                              <div>
+                                <p className="font-extrabold text-gray-800 leading-tight">
+                                  {p.notes || p.description || 'Monthly Waste & Levies'}
+                                </p>
+                                <span className="text-[10px] text-gray-400 font-bold block mt-0.5 capitalize">
+                                  {isMonthly ? 'Monthly Fee' : 'Special Pickup'}
+                                </span>
+                              </div>
+                            </div>
+                            <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wide inline-flex items-center gap-1.5 ${
+                              p.status === 'paid' 
+                                ? 'bg-[#EBFDF2] text-emerald-850' 
+                                : 'bg-red-50 text-red-800'
+                            }`}>
+                              <span className={`w-1.5 h-1.5 rounded-full ${p.status === 'paid' ? 'bg-emerald-500' : 'bg-red-500'}`}></span>
+                              {p.status}
+                            </span>
+                          </div>
+
+                          <div className="flex justify-between items-center pt-1">
+                            <div>
+                              <span className="text-[10px] text-gray-400 font-bold block uppercase tracking-wider">Date</span>
+                              <span className="font-bold text-[#1E4D2B]">{p.date || p.created_at?.slice(0, 10) || '2026-05-13'}</span>
+                            </div>
+                            <div className="text-right">
+                              <span className="text-[10px] text-gray-400 font-bold block uppercase tracking-wider">Amount</span>
+                              <span className="font-extrabold text-gray-850 text-sm">LKR {p.amount.toLocaleString()}</span>
+                            </div>
+                          </div>
+
+                          <div className="pt-1.5">
+                            {p.status === 'paid' ? (
+                              <button
+                                type="button"
+                                onClick={() => setSelectedReceiptPayment(p)}
+                                className="w-full py-2 border border-gray-200 hover:border-emerald-300 hover:bg-[#F4F8F5] text-gray-650 hover:text-[#1E4D2B] bg-white font-extrabold rounded-xl tracking-tight select-none cursor-pointer text-xs transition-all flex items-center justify-center gap-1.5"
+                              >
+                                <Printer className="w-3.5 h-3.5 text-gray-400" />
+                                <span>View PDF Receipt</span>
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => handleInitiateSettle(p)}
+                                className="w-full py-2.5 bg-[#1E4D2B] hover:bg-[#15341D] text-white font-extrabold rounded-xl select-none cursor-pointer text-xs transition-colors shadow-xs flex items-center justify-center gap-1"
+                              >
+                                <span>Settle Bill Now</span>
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    });
+                  })()}
                 </div>
               </div>
             </div>
