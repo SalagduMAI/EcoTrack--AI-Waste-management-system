@@ -1136,7 +1136,17 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
     }
     const shift = unitProfile.next_pickup.shift;
     if (!shift || shift === 'None') return 'None scheduled';
-    return (shift.charAt(0).toUpperCase() + shift.slice(1).toLowerCase()) + ' Shift';
+    const shiftName = shift.charAt(0).toUpperCase() + shift.slice(1).toLowerCase();
+    
+    if (shift.toLowerCase() === 'night') {
+      const nextDateStr = unitProfile.next_pickup.scheduled_date;
+      const d = new Date(nextDateStr);
+      d.setDate(d.getDate() + 1);
+      const nextDayStr = d.toLocaleDateString('en-US', { day: 'numeric', month: 'short' });
+      return `Night Shift (Overnight to ${nextDayStr})`;
+    }
+    
+    return shiftName + ' Shift';
   };
 
   // Sync current active recent conversation's messages

@@ -6150,7 +6150,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                         <div className="flex items-center gap-2 lg:ml-auto">
                           <label className="bg-white border border-gray-150 rounded-xl px-3.5 py-2 text-xs font-bold text-gray-700 flex items-center gap-1.5 shadow-sm cursor-pointer hover:bg-slate-50 transition-colors select-none">
                             <Calendar className="w-3.5 h-3.5 text-gray-400" />
-                            <span>{formatDateString(selectedCalendarDate)}</span>
+                            <span>{selectedCalendarDate ? formatDateString(selectedCalendarDate) : 'All Days'}</span>
                             <input
                               type="date"
                               className="sr-only"
@@ -6164,6 +6164,21 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                               }}
                             />
                           </label>
+
+                          {selectedCalendarDate && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedCalendarDate('');
+                                setSearchQuery('');
+                                setFeedbackMessage('Cleared date filter. Showing all jobs for the selected month.');
+                              }}
+                              className="bg-white border border-gray-150 text-gray-650 hover:bg-red-50 hover:text-red-700 hover:border-red-200 rounded-xl px-3 py-2 text-xs font-bold cursor-pointer transition-colors flex items-center gap-1"
+                              title="Clear date filter"
+                            >
+                              ✕ Clear
+                            </button>
+                          )}
 
                           <button
                             type="button"
