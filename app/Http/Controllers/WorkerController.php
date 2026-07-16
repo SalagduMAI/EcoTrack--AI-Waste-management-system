@@ -463,7 +463,12 @@ class WorkerController extends Controller
                 'profile_photo_path' => $w->profile_photo_path,
                 'profile_photo_url' => $w->profile_photo_path ? asset('storage/' . $w->profile_photo_path) : null,
             ];
-        })->sortByDesc('completed_jobs')->values();
+        })->sort(function ($a, $b) {
+            if ($a['completed_jobs'] === $b['completed_jobs']) {
+                return $b['rating'] <=> $a['rating'];
+            }
+            return $b['completed_jobs'] <=> $a['completed_jobs'];
+        })->values();
 
         $rankedLeaderboard = [];
         $rank = 1;
