@@ -2452,12 +2452,21 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
 
                     <div className="space-y-1">
                       {tasks.length > 0 ? (
-                        <>
-                          <h2 className="text-xl md:text-2xl font-black tracking-tight">You're on {currentBlockName} • {currentFloorName}</h2>
-                          <p className="text-xs text-emerald-100 font-medium">
-                            {doneCount} of {totalCount} done - {totalCount - doneCount} units remaining - 1 floor ahead of schedule 🌿
-                          </p>
-                        </>
+                        totalCount > 0 && doneCount === totalCount ? (
+                          <>
+                            <h2 className="text-xl md:text-2xl font-black tracking-tight">Shift Completed! 🌿</h2>
+                            <p className="text-xs text-emerald-100 font-medium">
+                              All {totalCount} of {totalCount} collections are done successfully. Thank you for your hard work today!
+                            </p>
+                          </>
+                        ) : (
+                          <>
+                            <h2 className="text-xl md:text-2xl font-black tracking-tight">You're on {currentBlockName} • {currentFloorName}</h2>
+                            <p className="text-xs text-emerald-100 font-medium">
+                              {doneCount} of {totalCount} done - {totalCount - doneCount} units remaining - 1 floor ahead of schedule 🌿
+                            </p>
+                          </>
+                        )
                       ) : (
                         <>
                           <h2 className="text-xl md:text-2xl font-black tracking-tight">No active assignment</h2>
