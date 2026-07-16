@@ -2687,7 +2687,6 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
                           });
 
                           let firstPendingFound = false;
-                          let pendingCount = 0;
 
                           return sortedTasks.map((t, idx) => {
                             let timeStr = '';
@@ -2699,26 +2698,15 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
                                 timeStr = '--:--';
                               }
                             } else {
-                              if (!shiftStartTime) {
-                                timeStr = '--:--';
-                              } else {
-                                try {
-                                  pendingCount++;
-                                  const timePart = formatTimeOnly(shiftStartTime);
-                                  const [startH, startM] = timePart.split(':').map(Number);
-                                  const totalStartMinutes = startH * 60 + startM;
-                                  
-                                  const nowTime = new Date();
-                                  const currentMinutes = nowTime.getHours() * 60 + nowTime.getMinutes();
-                                  
-                                  const baseMinutes = Math.max(totalStartMinutes, currentMinutes);
-                                  const estMinutes = baseMinutes + pendingCount * 12;
-                                  const estHour = Math.floor(estMinutes / 60) % 24;
-                                  const estMin = estMinutes % 60;
-                                  timeStr = `${estHour.toString().padStart(2, '0')}:${estMin.toString().padStart(2, '0')}`;
-                                } catch {
+                              try {
+                                if (t.created_at) {
+                                  const d = new Date(t.created_at);
+                                  timeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+                                } else {
                                   timeStr = '--:--';
                                 }
+                              } catch {
+                                timeStr = '--:--';
                               }
                             }
 
