@@ -4760,7 +4760,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
 
                       let isWithinHours = false;
                       if (s.includes('morning')) {
-                        isWithinHours = hours >= 8 && hours < 14;
+                        isWithinHours = hours >= 6 && hours < 14;
                       } else if (s.includes('evening')) {
                         isWithinHours = hours >= 14 && hours < 22;
                       } else if (s.includes('night')) {
