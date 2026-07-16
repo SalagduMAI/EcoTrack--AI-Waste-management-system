@@ -31,11 +31,11 @@ const getLocalDateString = (d = new Date()) => {
 };
 
 const getShiftTime = (shift: string) => {
-  if (!shift) return '06:30 AM';
+  if (!shift) return '06:00 AM';
   const s = shift.toLowerCase();
-  if (s.includes('evening')) return '02:30 PM';
-  if (s.includes('night')) return '10:30 PM';
-  return '06:30 AM';
+  if (s.includes('evening')) return '02:00 PM';
+  if (s.includes('night')) return '10:00 PM';
+  return '06:00 AM';
 };
 
 const formatLocalDateOnlyString = (dateInput: any) => {

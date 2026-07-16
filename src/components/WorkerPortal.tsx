@@ -2445,7 +2445,7 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
                       <span className="text-[10px] uppercase font-bold text-emerald-250 tracking-wider">
                         {localUser?.shift || 'Morning'} SHIFT • {
                           (localUser?.shift?.toLowerCase() || '').includes('evening') ? '14:00 - 22:00' : 
-                          (localUser?.shift?.toLowerCase() || '').includes('night') ? '22:00 - 06:00' : '08:00 - 14:00'
+                          (localUser?.shift?.toLowerCase() || '').includes('night') ? '22:00 - 06:00' : '06:00 - 14:00'
                         }
                       </span>
                     </div>
@@ -2659,7 +2659,7 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
                           <span className="font-bold text-gray-400 font-mono w-10 text-left">
                             {formatTimeOnly(shiftStartTime) || 
                              ((localUser?.shift?.toLowerCase() || '').includes('evening') ? '14:00' : 
-                              (localUser?.shift?.toLowerCase() || '').includes('night') ? '20:00' : '08:00')}
+                              (localUser?.shift?.toLowerCase() || '').includes('night') ? '22:00' : '06:00')}
                           </span>
                           <span className={shiftStartTime ? 'font-extrabold text-gray-900' : 'text-gray-500 font-semibold'}>
                             Shift started
@@ -5591,7 +5591,10 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
                             S
                           </div>
                           <span className="text-[8px] font-bold text-gray-400 mt-1 uppercase">
-                            {shiftStartTime || '08:00 AM'}
+                            {shiftStartTime || (
+                              (localUser?.shift?.toLowerCase() || '').includes('evening') ? '02:00 PM' :
+                              (localUser?.shift?.toLowerCase() || '').includes('night') ? '10:00 PM' : '06:00 AM'
+                            )}
                           </span>
                         </div>
 
