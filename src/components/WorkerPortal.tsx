@@ -5552,7 +5552,8 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
                 const routeVisualTasks = sortedTasks.slice(0, 4);
                 const doneTasksCount = tasks.filter(t => t.status === 'done').length;
                 const totalTasksCount = tasks.length;
-                const progressPct = totalTasksCount > 0 ? (doneTasksCount / totalTasksCount) * 80 : 0;
+                const isAllDone = totalTasksCount > 0 && doneTasksCount === totalTasksCount;
+                const progressPct = totalTasksCount > 0 ? (isAllDone ? 100 : (doneTasksCount / totalTasksCount) * 80) : 0;
 
                 const activeTask = sortedTasks.find(t => t.status === 'in_progress' || t.status === 'pending');
                 const activeUnitName = activeTask ? (activeTask.unit?.unit_number || `Floor ${activeTask.floor?.floor_number || 'Corridor'}`) : null;
@@ -5628,10 +5629,16 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
 
                         {/* End Point Floor Exit */}
                         <div className="flex flex-col items-center">
-                          <div className="w-8 h-8 rounded-full bg-gray-300 text-gray-600 font-black text-[10px] flex items-center justify-center border-4 border-white shadow-md">
-                            E
-                          </div>
-                          <span className="text-[8px] font-bold text-gray-400 mt-1 uppercase">EXIT</span>
+                          {isAllDone ? (
+                            <div className="w-8 h-8 rounded-full bg-[#1E4D2B] text-white font-black text-[10px] flex items-center justify-center border-4 border-white shadow-md relative z-15">
+                              ✓
+                            </div>
+                          ) : (
+                            <div className="w-8 h-8 rounded-full bg-gray-300 text-gray-600 font-black text-[10px] flex items-center justify-center border-4 border-white shadow-md">
+                              E
+                            </div>
+                          )}
+                          <span className={`text-[8px] font-bold mt-1 uppercase ${isAllDone ? 'text-emerald-800' : 'text-gray-400'}`}>EXIT</span>
                         </div>
                       </div>
                     </div>
