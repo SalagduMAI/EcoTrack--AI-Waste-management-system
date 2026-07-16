@@ -395,11 +395,27 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
     }
   };
 
-  const [timerSeconds, setTimerSeconds] = useState(() => parseInt(localStorage.getItem('ecotrack_shift_timer_seconds') || '0', 10)); 
+  const [timerSeconds, setTimerSeconds] = useState(() => {
+    const paused = localStorage.getItem('ecotrack_shift_timer_paused') !== 'false';
+    const localSec = parseInt(localStorage.getItem('ecotrack_shift_timer_seconds') || '0', 10);
+    if (paused) {
+      return localSec;
+    }
+    const startStr = localStorage.getItem('ecotrack_shift_start_time');
+    if (startStr) {
+      const parsedStart = parseServerDate(startStr);
+      if (parsedStart) {
+        const elapsed = Math.floor((new Date().getTime() - parsedStart.getTime()) / 1000);
+        if (elapsed >= 0 && elapsed < 12 * 3600) {
+          return elapsed;
+        }
+      }
+    }
+    return localSec;
+  }); 
   const [timerPaused, setTimerPaused] = useState(() => localStorage.getItem('ecotrack_shift_timer_paused') === 'false' ? false : true);
   const [shiftStartTime, setShiftStartTime] = useState<string | null>(() => {
     const val = localStorage.getItem('ecotrack_shift_start_time');
-    // If it's the old format (time-only without date dashes or ISO 'T'), clean it up
     if (val && !val.includes('T') && !val.includes('-')) {
       localStorage.removeItem('ecotrack_shift_start_time');
       localStorage.removeItem('ecotrack_shift_timer_seconds');
@@ -653,6 +669,19 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
         }
 
         interval = setInterval(() => {
+          if (shiftStartTimeRef.current) {
+            const parsedStart = parseServerDate(shiftStartTimeRef.current);
+            if (parsedStart) {
+              const elapsed = Math.floor((new Date().getTime() - parsedStart.getTime()) / 1000);
+              if (elapsed >= 0 && elapsed < 12 * 3600) {
+                setTimerSeconds(elapsed);
+                if (elapsed % 10 === 0) {
+                  saveShiftTimerToServer(elapsed);
+                }
+                return;
+              }
+            }
+          }
           setTimerSeconds(s => {
             const nextSec = s + 1;
             if (nextSec % 10 === 0) {
@@ -2473,11 +2502,9 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
                           setMessage({ text: `Cannot start shift: You are outside your scheduled ${localUser?.shift || 'Morning'} shift hours.`, type: 'error' });
                           return;
                         }
-                        if (!nextStartTime) {
-                          const now = new Date();
-                          nextStartTime = now.toISOString();
-                          setShiftStartTime(nextStartTime);
-                        }
+                        const now = new Date();
+                        nextStartTime = new Date(now.getTime() - timerSeconds * 1000).toISOString();
+                        setShiftStartTime(nextStartTime);
                       }
                       setTimerPaused(nextPaused);
                       saveShiftTimerToServer(timerSeconds, nextPaused, nextStartTime);
