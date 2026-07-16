@@ -243,7 +243,7 @@ class ResidentController extends Controller
 
         $userMessage = $request->message;
 
-        $apiKey = env('GEMINI_API_KEY');
+        $apiKey = config('services.gemini.key') ?? env('GEMINI_API_KEY');
         $matchedArticles = collect();
         $scoredArticles = [];
 
@@ -428,8 +428,8 @@ Conversational Thread History:
         $ticketDetails = null;
 
         if (empty($apiKey) || $apiKey === 'MY_GEMINI_API_KEY') {
-            // Safe fallback response if key not available
-            $botResponse = "Hello! I am Eco-Bot, your advisor. I noticed that my Gemini API coordinates are currently on sandbox placeholders. Based on our sorting directives: recycle clean glass, pet plastics, and cards safely. Compost wet organic scraps under Block scheme norms. Let me know if you would like me to detail further!";
+            // Safe fallback response if key not available - using local KB matching
+            $botResponse = $this->getLocalFallbackResponse($userMessage, $resident);
         } else {
             try {
                 // Query using gemini-2.5-flash which is supported in the environment
