@@ -1147,6 +1147,8 @@ Conversational Thread History:
             'category' => 'required|in:missed_collection,worker_rudeness,spilled_waste,wrong_time,other',
             'description' => 'required|string|min:10',
             'job_id' => 'nullable|exists:jobs,id',
+            'date' => 'nullable|string',
+            'expected_time' => 'nullable|string',
         ]);
 
         if ($validator->fails()) {
@@ -1167,6 +1169,8 @@ Conversational Thread History:
             'category' => $request->category,
             'description' => $request->description,
             'status' => 'open',
+            'incident_date' => $request->date ?? \Carbon\Carbon::now()->toDateString(),
+            'expected_time' => $request->expected_time,
         ]);
 
         return response()->json([

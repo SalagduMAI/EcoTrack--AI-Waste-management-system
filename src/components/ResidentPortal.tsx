@@ -790,7 +790,9 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
           }
           return {
             ...c,
-            category: friendlyCategory
+            category: friendlyCategory,
+            date: c.incident_date || c.date || (c.created_at ? c.created_at.slice(0, 10) : '2026-05-09'),
+            expected_time: c.expected_time || '06:30 AM'
           };
         });
         const merged = [...live];
@@ -5005,7 +5007,7 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
                               <h4 className="text-xs font-black text-gray-800">4. Resolution outcome set</h4>
                               <p className="text-[11px] text-gray-400 font-semibold mt-0.5 leading-relaxed">
                                 {selectedTrackedComplaint.status === 'resolved' 
-                                  ? 'Issue successfully closed. Dispatch crew updated & late run completed.' 
+                                  ? (selectedTrackedComplaint.internal_notes || selectedTrackedComplaint.resolved_notes || 'Issue successfully closed. Dispatch crew updated & late run completed.') 
                                   : 'Awaiting final validation action from Estate management block.'}
                               </p>
                             </div>
@@ -5019,11 +5021,11 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
                           <div className="grid grid-cols-2 gap-3 text-xs">
                             <div>
                               <span className="text-gray-400 block font-bold text-[9.5px]">INCIDENT DATE</span>
-                              <span className="font-extrabold text-gray-700">{selectedTrackedComplaint.date || '2026-05-09'}</span>
+                              <span className="font-extrabold text-gray-700">{selectedTrackedComplaint.date}</span>
                             </div>
                             <div>
                               <span className="text-gray-400 block font-bold text-[9.5px]">INCIDENT TIME</span>
-                              <span className="font-extrabold text-gray-700">{selectedTrackedComplaint.expected_time || '06:30 AM'}</span>
+                              <span className="font-extrabold text-gray-700">{selectedTrackedComplaint.expected_time}</span>
                             </div>
                           </div>
                           <div>

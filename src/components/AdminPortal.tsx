@@ -1228,6 +1228,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                 : (c.category === 'spilled_waste' ? 'Spilled Waste'
                   : (c.category ? c.category.split('_').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') : 'Other Mishap')))),
           resolved_notes: c.resolved_notes || c.internal_notes || '',
+          resident_avatar: c.resident?.profile_photo_path ? (c.resident.profile_photo_path.startsWith('http') ? c.resident.profile_photo_path : '/storage/' + c.resident.profile_photo_path) : null,
           resident_name: c.resident ? c.resident.name : (c.resident_name || 'Resident Occupant'),
           resident_full_name: c.resident ? c.resident.name : (c.resident_full_name || c.resident_name || 'Resident Occupant'),
           resident_phone: c.resident ? c.resident.phone : (c.resident_phone || 'N/A'),
@@ -7860,9 +7861,17 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                                 {/* Resident Name & Initials */}
                                 <td className="py-4 px-5">
                                   <div className="flex items-center gap-3">
-                                    <div className="w-8 h-8 rounded-full bg-emerald-50 text-[#2E7D32] text-[10.5px] font-black flex items-center justify-center border border-emerald-100 uppercase shrink-0">
-                                      {initials}
-                                    </div>
+                                    {item.resident?.profile_photo_path ? (
+                                      <img 
+                                        src={item.resident.profile_photo_path.startsWith('http') ? item.resident.profile_photo_path : `/storage/${item.resident.profile_photo_path}`} 
+                                        alt={item.resident?.name || 'Resident'} 
+                                        className="w-8 h-8 rounded-full object-cover shrink-0 border border-emerald-100"
+                                      />
+                                    ) : (
+                                      <div className="w-8 h-8 rounded-full bg-emerald-50 text-[#2E7D32] text-[10.5px] font-black flex items-center justify-center border border-emerald-100 uppercase shrink-0">
+                                        {initials}
+                                      </div>
+                                    )}
                                     <div>
                                       <span className="font-extrabold text-gray-950 block group-hover:text-[#2E7D32] transition-colors">
                                         {item.resident?.name || 'Resident Occupant'}
@@ -8573,9 +8582,17 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
 
                         {/* ID layout with Avatar initials */}
                         <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-full bg-emerald-50 text-[#2E7D32] text-xs font-black flex items-center justify-center border border-emerald-100 uppercase shrink-0">
-                            {initials}
-                          </div>
+                          {selectedComplaint.resident_avatar ? (
+                            <img 
+                              src={selectedComplaint.resident_avatar} 
+                              alt={selectedComplaint.resident_full_name || selectedComplaint.resident_name} 
+                              className="w-10 h-10 rounded-full object-cover shrink-0 border border-emerald-100"
+                            />
+                          ) : (
+                            <div className="w-10 h-10 rounded-full bg-emerald-50 text-[#2E7D32] text-xs font-black flex items-center justify-center border border-emerald-100 uppercase shrink-0">
+                              {initials}
+                            </div>
+                          )}
                           <div className="text-left">
                             <p className="font-extrabold text-gray-950 text-xs sm:text-md">{selectedComplaint.resident_full_name || selectedComplaint.resident_name || 'Resident Occupant'}</p>
                             <p className="text-[10.5px] text-gray-400 font-bold block mt-0.5">Unit {selectedComplaint.unit_number}</p>
@@ -8753,9 +8770,17 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                                 {/* Resident block with Initial Badge */}
                                 <td className="py-4.5 px-4">
                                   <div className="flex items-center gap-3">
-                                    <div className="w-8 h-8 rounded-full bg-emerald-50 text-[#2E7D32] text-[10.5px] font-black flex items-center justify-center border border-emerald-100 uppercase shrink-0">
-                                      {initials}
-                                    </div>
+                                    {item.resident_avatar ? (
+                                      <img 
+                                        src={item.resident_avatar} 
+                                        alt={item.resident_full_name || item.resident_name} 
+                                        className="w-8 h-8 rounded-full object-cover shrink-0 border border-emerald-100"
+                                      />
+                                    ) : (
+                                      <div className="w-8 h-8 rounded-full bg-emerald-50 text-[#2E7D32] text-[10.5px] font-black flex items-center justify-center border border-emerald-100 uppercase shrink-0">
+                                        {initials}
+                                      </div>
+                                    )}
                                     <span className="font-extrabold text-gray-950 truncate max-w-[150px]">
                                       {item.resident_full_name || item.resident_name}
                                     </span>

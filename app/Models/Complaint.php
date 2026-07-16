@@ -20,6 +20,8 @@ class Complaint extends Model
         'status',
         'internal_notes',
         'resolved_at',
+        'incident_date',
+        'expected_time',
     ];
 
     protected $casts = [
