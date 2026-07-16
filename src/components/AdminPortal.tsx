@@ -573,6 +573,40 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
   const [activePreviewReport, setActivePreviewReport] = useState<'summary' | 'workers' | 'revenue' | 'recycling' | 'complaints' | 'schedule'>('summary');
 
   const downloadReportPdf = (reportId: string) => {
+    const monthMap: { [key: string]: number } = {
+      "January": 1, "February": 2, "March": 3, "April": 4, "May": 5, "June": 6,
+      "July": 7, "August": 8, "September": 9, "October": 10, "November": 11, "December": 12
+    };
+    const partsSel = selectedCalendarMonth.split(' ');
+    const selMonthNum = monthMap[partsSel[0]] || 7;
+    const selYear = parseInt(partsSel[1], 10) || 2026;
+
+    const monthComplaints = complaints.filter(c => {
+      if (!c.created_at) return false;
+      const parts = c.created_at.split(' ')[0].split('T')[0].split('-');
+      if (parts.length < 2) return false;
+      const compYear = parseInt(parts[0], 10);
+      const compMonthNum = parseInt(parts[1], 10);
+      return compYear === selYear && compMonthNum === selMonthNum;
+    });
+
+    const monthPayments = payments.filter(p => {
+      if (!p.created_at) return false;
+      const parts = p.created_at.split(' ')[0].split('T')[0].split('-');
+      if (parts.length < 2) return false;
+      const payYear = parseInt(parts[0], 10);
+      const payMonthNum = parseInt(parts[1], 10);
+      return payYear === selYear && payMonthNum === selMonthNum;
+    });
+
+    const reportTotalJobs = monthJobs.length;
+    const reportCompletedJobs = monthJobs.filter(j => j.status === 'done').length;
+    const reportIssuesCount = monthJobs.filter(j => j.status === 'issue').length;
+    const reportCompletionRate = reportTotalJobs > 0 ? Math.round((reportCompletedJobs / reportTotalJobs) * 100) : 0;
+    const reportOpenComplaintsCount = monthComplaints.filter(c => c.status === 'open' || c.status === 'pending').length;
+    const reportActiveWorkersCount = users.filter(u => u.role === 'worker').length;
+    const reportTotalRevenue = monthPayments.filter(p => p.status === 'paid').reduce((sum, p) => sum + p.amount, 0);
+
     const doc = new jsPDF({
       orientation: 'p',
       unit: 'mm',
@@ -599,12 +633,12 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
     doc.setFontSize(14);
 
     let reportTitle = "Official Management Report";
-    if (reportId === 'summary') reportTitle = "Monthly Summary Report - May 2026";
-    if (reportId === 'workers') reportTitle = "Workforce Performance & Operations Audit";
-    if (reportId === 'revenue') reportTitle = "System Revenue Ledger & Receipts Audit";
-    if (reportId === 'recycling') reportTitle = "Recycling Impact & Environmental Diversion Audit";
-    if (reportId === 'complaints') reportTitle = "Grievances & Resident Complaints Resolution Report";
-    if (reportId === 'schedule') reportTitle = "Schedule Adherence & Sequence Punctuality Audit";
+    if (reportId === 'summary') reportTitle = `Monthly Summary Report - ${selectedCalendarMonth}`;
+    if (reportId === 'workers') reportTitle = `Workforce Performance & Operations - ${selectedCalendarMonth}`;
+    if (reportId === 'revenue') reportTitle = `System Revenue Ledger & Invoices - ${selectedCalendarMonth}`;
+    if (reportId === 'recycling') reportTitle = `Recycling Impact & Waste Diversion - ${selectedCalendarMonth}`;
+    if (reportId === 'complaints') reportTitle = `Grievances & Resident Complaints - ${selectedCalendarMonth}`;
+    if (reportId === 'schedule') reportTitle = `Schedule Adherence & Punctuality - ${selectedCalendarMonth}`;
 
     doc.text(reportTitle, 14, 48);
 
@@ -626,12 +660,12 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
       doc.text("Core Aggregated Diagnostics (Current Rotation Cycle)", 14, 71);
 
       const metrics = [
-        { k: "Total Scheduled Pickups & Tasks", v: `${jobs.length} Jobs (Scheduled & Verified)` },
-        { k: "Shift/Task Verification Rate", v: `${donePercent}% On Time` },
-        { k: "SLA Gross Revenue Inflow", v: `LKR ${totalRevenue.toLocaleString()}.00` },
-        { k: "Total Logged Complaints Filed", v: `${complaints.length} Resident Grievances` },
-        { k: "Outstanding Unresolved Issues", v: `${complaints.filter(c => c.status === 'open' || c.status === 'pending').length} Pending Response` },
-        { k: "Active Enlisted Zone Workers", v: `${users.filter(u => u.role === 'worker').length} Registrations` }
+        { k: "Total Scheduled Pickups & Tasks", v: `${reportTotalJobs} Jobs (Scheduled & Verified)` },
+        { k: "Shift/Task Verification Rate", v: `${reportCompletionRate}% On Time` },
+        { k: "SLA Gross Revenue Inflow", v: `LKR ${reportTotalRevenue.toLocaleString()}.00` },
+        { k: "Total Logged Complaints Filed", v: `${monthComplaints.length} Resident Grievances` },
+        { k: "Outstanding Unresolved Issues", v: `${reportOpenComplaintsCount} Pending Response` },
+        { k: "Active Enlisted Zone Workers", v: `${reportActiveWorkersCount} Registrations` }
       ];
 
       let y = 78;
@@ -652,7 +686,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
 
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(9.5);
-      const activePendingComplaints = complaints.filter(c => c.status === 'open' || c.status === 'pending').length;
+      const activePendingComplaints = monthComplaints.filter(c => c.status === 'open' || c.status === 'pending').length;
       const bullets = [
         `- High-efficiency sectors attained superior collection completion verification scores this period.`,
         `- Active operators leading the roster with outstanding consistent performance reviews.`,
@@ -673,7 +707,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
 
       const activeWorkers = users.filter((u: any) => u.role === 'worker');
       const realWorkers = activeWorkers.map((u: any) => {
-        const wJobs = jobs.filter(j => j.worker_id === u.id || j.worker?.id === u.id || j.worker?.name === u.name);
+        const wJobs = monthJobs.filter(j => j.worker_id === u.id || j.worker?.id === u.id || j.worker?.name === u.name);
         const completedCount = wJobs.filter(j => j.status === 'done').length;
         const completionScore = wJobs.length > 0 ? Math.round((completedCount / wJobs.length) * 100) : 100;
         return {
@@ -729,7 +763,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
       doc.setFontSize(11);
       doc.text("Financial Ledgers & Collections Statement", 14, 71);
 
-      const realReceipts = payments.slice(0, 6).map((p: any) => ({
+      const realReceipts = monthPayments.slice(0, 6).map((p: any) => ({
         desc: `${p.payment_type || 'Monthly Levy'} - ${p.resident_name || 'Resident'}`,
         code: p.reference_code || p.txn_code || `EC-${p.id}`,
         price: `LKR ${p.amount.toLocaleString()}.00`,
@@ -769,7 +803,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(11);
       doc.text("Net Combined Cash Ledger Flow:", 90, y + 6);
-      doc.text(`LKR ${totalRevenue.toLocaleString()}.00`, 152, y + 6);
+      doc.text(`LKR ${reportTotalRevenue.toLocaleString()}.00`, 152, y + 6);
 
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(11);
@@ -786,10 +820,10 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
       doc.text("Recycling Yield & Landfill Diversion Ledger", 14, 71);
 
       const items = [
-        { cat: "Wet Organic Compositing", yield: `${(completedJobsCount * 12).toLocaleString()} kg Recycled`, impact: "Fitted for local fertilizer", SLA: "98% Diverted" },
-        { cat: "Plastics (PET / HDPE)", yield: `${(completedJobsCount * 5).toLocaleString()} kg Segregated`, impact: "National processing centers", SLA: "100% Diverted" },
-        { cat: "Corrugated Cardboards", yield: `${(completedJobsCount * 4).toLocaleString()} kg Reconstructed`, impact: "Industrial pulping runs", SLA: "95% Clean Recovered" },
-        { cat: "Re-smelting Glass Cullets", yield: `${(completedJobsCount * 2).toLocaleString()} kg Crushed`, impact: "Refabricated bottles", SLA: "90% Recovered" }
+        { cat: "Wet Organic Compositing", yield: `${(reportCompletedJobs * 12).toLocaleString()} kg Recycled`, impact: "Fitted for local fertilizer", SLA: "98% Diverted" },
+        { cat: "Plastics (PET / HDPE)", yield: `${(reportCompletedJobs * 5).toLocaleString()} kg Segregated`, impact: "National processing centers", SLA: "100% Diverted" },
+        { cat: "Corrugated Cardboards", yield: `${(reportCompletedJobs * 4).toLocaleString()} kg Reconstructed`, impact: "Industrial pulping runs", SLA: "95% Clean Recovered" },
+        { cat: "Re-smelting Glass Cullets", yield: `${(reportCompletedJobs * 2).toLocaleString()} kg Crushed`, impact: "Refabricated bottles", SLA: "90% Recovered" }
       ];
 
       let y = 78;
@@ -821,7 +855,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
       doc.setFontSize(9.5);
       doc.setTextColor(30, 86, 47);
 
-      const carbonOffset = ((completedJobsCount * 12 + completedJobsCount * 5) / 1000).toFixed(1);
+      const carbonOffset = ((reportCompletedJobs * 12 + reportCompletedJobs * 5) / 1000).toFixed(1);
       doc.text(`Carbon Offset equivalents: ~${carbonOffset} Metric Tons of CO2 emissions prevented from municipal entry.`, 18, y + 9);
       doc.text("Solid Waste diversion quotient registers a robust solid drop in municipal landfill volume.", 18, y + 14);
     }
@@ -831,7 +865,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
       doc.setFontSize(11);
       doc.text("Resident Complaints Log & Resolution Performance SLA", 14, 71);
 
-      const logs = complaints.slice(0, 6).map((c: any) => ({
+      const logs = monthComplaints.slice(0, 6).map((c: any) => ({
         code: `COMP-${c.id}`,
         title: c.title || c.description,
         area: c.unit_number || 'N/A',
@@ -871,7 +905,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
         });
       }
 
-      const resolutionRate = complaints.length > 0 ? Math.round((complaints.filter(c => c.status === 'resolved').length / complaints.length) * 100) : 0;
+      const resolutionRate = monthComplaints.length > 0 ? Math.round((monthComplaints.filter(c => c.status === 'resolved').length / monthComplaints.length) * 100) : 0;
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(10.5);
       doc.text("Resolution Velocity Index: High turnaround efficiency verified", 14, y + 9);
@@ -883,13 +917,13 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
       doc.setFontSize(11);
       doc.text("Schedule Adherence & Sequence Punctuality", 14, 71);
 
-      const segments = jobs.slice(0, 6).map((job: any) => {
+      const segments = monthJobs.slice(0, 8).map((job: any) => {
         const devVal = job.status === 'done' ? (job.id % 5 === 0 ? 'On Time' : `+${(job.id % 4) * 2 + 2} Mins`) : 'Pending';
         const otpfVal = job.status === 'done' ? (job.id % 5 === 0 ? '99.1% (On Time)' : '97.5% (On Time)') : 'Pending';
         return {
           name: `Sweep - Block ${job.block?.name || job.unit?.floor?.block?.name || 'A'}`,
-          sched: job.scheduled_time || '08:00 AM',
-          act: job.status === 'done' ? (job.scheduled_time || '08:00 AM') : 'Awaiting Dispatch',
+          sched: job.scheduled_date ? `${job.scheduled_date} (${job.shift})` : `Today (${job.shift})`,
+          act: job.status === 'done' ? 'Completed' : 'Pending',
           dev: devVal,
           OTPF: otpfVal
         };
@@ -941,7 +975,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
     doc.text("Report compiled from live telemetry database logs. Reconciled under statutory city code standards for solid waste auditing.", 14, 279);
     doc.text("Page 1 of 1", 185, 279);
 
-    doc.save(`EcoTrack_${reportId}_Report_May2026.pdf`);
+    doc.save(`EcoTrack_${reportId}_Report_${selectedCalendarMonth.replace(/\s+/g, '_')}.pdf`);
   };
 
   // High Fidelity Settings States
@@ -8870,7 +8904,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
             const activeWorkers = users.filter((u: any) => u.role === 'worker');
             const performanceWorkers = activeWorkers.map((u: any, idx: number) => {
               const initials = u.name ? u.name.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2) : 'W';
-              const wJobs = jobs.filter(j => j.worker_id === u.id || j.worker?.id === u.id || j.worker?.name === u.name);
+              const wJobs = monthJobs.filter(j => j.worker_id === u.id || j.worker?.id === u.id || j.worker?.name === u.name);
               const completedCount = wJobs.filter(j => j.status === 'done').length;
               const completionScore = wJobs.length > 0 ? Math.round((completedCount / wJobs.length) * 100) : 100;
 
@@ -8896,17 +8930,45 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
             });
 
             // ── DYNAMIC CALCULATIONS FOR PREVIEWS ──
+            const [selMonthName, selYearStr] = selectedCalendarMonth.split(' ');
+            const selYear = parseInt(selYearStr, 10);
+            const selMonthNum = monthsList.indexOf(selMonthName) + 1; // 1-12
+
+            const monthPayments = payments.filter(p => {
+              if (!p.created_at) return false;
+              const parts = p.created_at.split(' ')[0].split('T')[0].split('-');
+              if (parts.length < 2) return false;
+              const payYear = parseInt(parts[0], 10);
+              const payMonthNum = parseInt(parts[1], 10);
+              return payYear === selYear && payMonthNum === selMonthNum;
+            });
+
+            const reportTotalJobs = monthJobs.length;
+            const reportCompletedJobs = monthJobs.filter(j => j.status === 'done').length;
+            const reportIssuesCount = monthJobs.filter(j => j.status === 'issue').length;
+            const reportCompletionRate = reportTotalJobs > 0 ? Math.round((reportCompletedJobs / reportTotalJobs) * 100) : 0;
+            const reportTotalRevenue = monthPayments.filter(p => p.status === 'paid').reduce((sum, p) => sum + p.amount, 0);
+
             const activeWorkersCount = activeWorkers.length;
             const ratedWorkers = activeWorkers.filter(w => w.rating !== null && Number(w.rating) > 0);
             const avgWorkerRating = ratedWorkers.length > 0
               ? (ratedWorkers.reduce((sum, w) => sum + Number(w.rating), 0) / ratedWorkers.length).toFixed(1)
               : 'N/A';
 
-            const levyRevenue = payments.filter(p => p.status === 'paid' && (p.payment_type?.toLowerCase().includes('levy') || p.notes?.toLowerCase().includes('levy'))).reduce((sum, p) => sum + p.amount, 0);
-            const pickupRevenue = payments.filter(p => p.status === 'paid' && (p.payment_type?.toLowerCase().includes('pickup') || p.notes?.toLowerCase().includes('pickup') || p.payment_type?.toLowerCase().includes('sweep') || p.notes?.toLowerCase().includes('sweep'))).reduce((sum, p) => sum + p.amount, 0);
-            const saleRevenue = payments.filter(p => p.status === 'paid' && (p.payment_type?.toLowerCase().includes('sale') || p.notes?.toLowerCase().includes('sale'))).reduce((sum, p) => sum + p.amount, 0);
+            const levyRevenue = monthPayments.filter(p => p.status === 'paid' && (p.payment_type?.toLowerCase().includes('levy') || p.notes?.toLowerCase().includes('levy'))).reduce((sum, p) => sum + p.amount, 0);
+            const pickupRevenue = monthPayments.filter(p => p.status === 'paid' && (p.payment_type?.toLowerCase().includes('pickup') || p.notes?.toLowerCase().includes('pickup') || p.payment_type?.toLowerCase().includes('sweep') || p.notes?.toLowerCase().includes('sweep'))).reduce((sum, p) => sum + p.amount, 0);
+            const saleRevenue = monthPayments.filter(p => p.status === 'paid' && (p.payment_type?.toLowerCase().includes('sale') || p.notes?.toLowerCase().includes('sale'))).reduce((sum, p) => sum + p.amount, 0);
 
-            const resolvedComplaints = complaints.filter(c => c.status === 'resolved');
+            const monthComplaints = complaints.filter(c => {
+              if (!c.created_at) return false;
+              const parts = c.created_at.split(' ')[0].split('T')[0].split('-');
+              if (parts.length < 2) return false;
+              const compYear = parseInt(parts[0], 10);
+              const compMonthNum = parseInt(parts[1], 10);
+              return compYear === selYear && compMonthNum === selMonthNum;
+            });
+
+            const resolvedComplaints = monthComplaints.filter(c => c.status === 'resolved');
             let avgSlaSpan = '0.0 Hours';
             if (resolvedComplaints.length > 0) {
               let totalMs = 0;
@@ -8931,20 +8993,20 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
               avgSlaSpan = 'N/A';
             }
 
-            const avgDeviation = totalJobsCount > 0
-              ? `${((jobs.filter(j => j.status === 'done').length * 2.1 + jobs.filter(j => j.status === 'issue').length * 15.4) / (totalJobsCount || 1)).toFixed(1)} Mins`
+            const avgDeviation = reportTotalJobs > 0
+              ? `${((monthJobs.filter(j => j.status === 'done').length * 2.1 + monthJobs.filter(j => j.status === 'issue').length * 15.4) / (reportTotalJobs || 1)).toFixed(1)} Mins`
               : '0.0 Mins';
 
-            const morningDone = jobs.filter(j => j.shift?.toLowerCase() === 'morning' && j.status === 'done').length;
-            const afternoonDone = jobs.filter(j => (j.shift?.toLowerCase() === 'afternoon' || j.shift?.toLowerCase() === 'evening') && j.status === 'done').length;
-            const nightDone = jobs.filter(j => j.shift?.toLowerCase() === 'night' && j.status === 'done').length;
+            const morningDone = monthJobs.filter(j => j.shift?.toLowerCase() === 'morning' && j.status === 'done').length;
+            const afternoonDone = monthJobs.filter(j => (j.shift?.toLowerCase() === 'afternoon' || j.shift?.toLowerCase() === 'evening') && j.status === 'done').length;
+            const nightDone = monthJobs.filter(j => j.shift?.toLowerCase() === 'night' && j.status === 'done').length;
             let fastestSweep = 'Morning';
             if (afternoonDone > morningDone && afternoonDone > nightDone) fastestSweep = 'Afternoon';
             else if (nightDone > morningDone && nightDone > afternoonDone) fastestSweep = 'Night';
 
             // Highlights variables
             const blockStats = blocks.map(b => {
-              const blockJobs = jobs.filter(j => {
+              const blockJobs = monthJobs.filter(j => {
                 const jBlockName = j.block?.name || j.floor?.block?.name || j.unit?.floor?.block?.name || '';
                 return jBlockName.toLowerCase() === b.name.toLowerCase();
               });
@@ -8961,25 +9023,25 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
               ? ratedPerformanceWorkers.reduce((top, w) => Number(w.rating) > Number(top.rating) ? w : top, ratedPerformanceWorkers[0])
               : null;
 
-            const activeComplaintsCount = complaints.filter(c => c.status === 'open' || c.status === 'pending').length;
-            const blockComplaints = blocks.map(b => {
-              const count = complaints.filter(c =>
-                (c.status === 'open' || c.status === 'pending') &&
-                (c.unit_number?.startsWith(b.name.charAt(b.name.length - 1)) || c.block_name === b.name)
-              ).length;
-              return { name: b.name, count };
-            });
-            const worstComplaintBlock = blockComplaints.length > 0
-              ? blockComplaints.reduce((worst, current) => current.count > worst.count ? current : worst, blockComplaints[0])
-              : null;
+             const activeComplaintsCount = monthComplaints.filter(c => c.status === 'open' || c.status === 'pending').length;
+             const blockComplaints = blocks.map(b => {
+               const count = monthComplaints.filter(c =>
+                 (c.status === 'open' || c.status === 'pending') &&
+                 (c.unit_number?.startsWith(b.name.charAt(b.name.length - 1)) || c.block_name === b.name)
+               ).length;
+               return { name: b.name, count };
+             });
+             const worstComplaintBlock = blockComplaints.length > 0
+               ? blockComplaints.reduce((worst, current) => current.count > worst.count ? current : worst, blockComplaints[0])
+               : null;
 
-            const pendingFines = payments.filter(p => p.status !== 'paid' && p.payment_type?.toLowerCase().includes('fine')).reduce((sum, p) => sum + p.amount, 0);
+             const pendingFines = monthPayments.filter(p => p.status !== 'paid' && p.payment_type?.toLowerCase().includes('fine')).reduce((sum, p) => sum + p.amount, 0);
 
-            const resolvedBlocks = blocks.filter(b => {
-              const blockComps = complaints.filter(c => c.unit_number?.startsWith(b.name.charAt(b.name.length - 1)) || c.block_name === b.name);
-              return blockComps.length > 0 && blockComps.every(c => c.status === 'resolved');
-            });
-            const activeComplaint = complaints.find(c => c.status === 'open' || c.status === 'pending');
+             const resolvedBlocks = blocks.filter(b => {
+               const blockComps = monthComplaints.filter(c => c.unit_number?.startsWith(b.name.charAt(b.name.length - 1)) || c.block_name === b.name);
+               return blockComps.length > 0 && blockComps.every(c => c.status === 'resolved');
+             });
+             const activeComplaint = monthComplaints.find(c => c.status === 'open' || c.status === 'pending');
 
             // 6 Dashboard report tiles
             const reportCards = [
@@ -9197,6 +9259,81 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
             return (
               <div className="space-y-6 text-left animate-in fade-in duration-200" id="reports-dashboard-screen">
 
+                {/* Calendar selection bar for reports telemetry */}
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-4 rounded-3xl border border-gray-150 shadow-xs">
+                  <div className="text-left space-y-0.5">
+                    <h4 className="text-xs font-black text-gray-500 uppercase tracking-wider">Report Telemetry Window</h4>
+                    <p className="text-[11px] text-gray-400 font-bold">Select target calendar cycle for compliance metrics & ledger summaries.</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const [mName, yStr] = selectedCalendarMonth.split(' ');
+                        const year = parseInt(yStr, 10);
+                        const monthIdx = monthsList.indexOf(mName);
+                        let prevMonthIdx = monthIdx - 1;
+                        let prevYear = year;
+                        if (prevMonthIdx < 0) {
+                          prevMonthIdx = 11;
+                          prevYear -= 1;
+                        }
+                        setSelectedCalendarMonth(`${monthsList[prevMonthIdx]} ${prevYear}`);
+                      }}
+                      className="p-1.5 border border-gray-200 rounded-lg text-gray-550 hover:bg-slate-50 cursor-pointer text-xs font-bold transition-all"
+                      title="Previous Month"
+                    >
+                      &lt;
+                    </button>
+
+                    <select
+                      value={selectedCalendarMonth.split(' ')[0]}
+                      onChange={(e) => {
+                        const year = selectedCalendarMonth.split(' ')[1] || '2026';
+                        setSelectedCalendarMonth(`${e.target.value} ${year}`);
+                      }}
+                      className="bg-white border border-gray-155 rounded-lg px-2.5 py-1.5 text-xs font-black text-[#164121] cursor-pointer focus:ring-1 focus:ring-emerald-500 outline-none"
+                    >
+                      {monthsList.map(m => (
+                        <option key={m} value={m}>{m}</option>
+                      ))}
+                    </select>
+
+                    <select
+                      value={selectedCalendarMonth.split(' ')[1]}
+                      onChange={(e) => {
+                        const month = selectedCalendarMonth.split(' ')[0] || 'May';
+                        setSelectedCalendarMonth(`${month} ${e.target.value}`);
+                      }}
+                      className="bg-white border border-gray-155 rounded-lg px-2.5 py-1.5 text-xs font-black text-[#164121] cursor-pointer focus:ring-1 focus:ring-emerald-500 outline-none"
+                    >
+                      {Array.from({ length: 11 }, (_, i) => 2020 + i).map(y => (
+                        <option key={y} value={y}>{y}</option>
+                      ))}
+                    </select>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const [mName, yStr] = selectedCalendarMonth.split(' ');
+                        const year = parseInt(yStr, 10);
+                        const monthIdx = monthsList.indexOf(mName);
+                        let nextMonthIdx = monthIdx + 1;
+                        let nextYear = year;
+                        if (nextMonthIdx > 11) {
+                          nextMonthIdx = 0;
+                          nextYear += 1;
+                        }
+                        setSelectedCalendarMonth(`${monthsList[nextMonthIdx]} ${nextYear}`);
+                      }}
+                      className="p-1.5 border border-gray-200 rounded-lg text-gray-550 hover:bg-slate-50 cursor-pointer text-xs font-bold transition-all"
+                      title="Next Month"
+                    >
+                      &gt;
+                    </button>
+                  </div>
+                </div>
+
                 {/* 6 Elegant bento-style reports grids */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5" id="reports-preset-matrix">
                   {reportCards.map((report) => {
@@ -9263,7 +9400,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                         {activePreviewReport === 'complaints' && "Complaints Log — Preview"}
                         {activePreviewReport === 'schedule' && "Schedule Adherence — Preview"}
                       </h3>
-                      <p className="text-[11px] text-gray-450 font-bold">Auto-generated for May 2026</p>
+                      <p className="text-[11px] text-gray-450 font-bold">Auto-generated for {selectedCalendarMonth}</p>
                     </div>
 
                     {/* Print and Download block controls */}
@@ -9301,12 +9438,12 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                       <div>
                         <span className="text-[8px] font-mono text-emerald-800 font-extrabold uppercase tracking-widest block leading-none">Ecotrack • Report</span>
                         <h4 className="text-lg sm:text-xl font-black text-gray-900 tracking-tight block mt-1.5">
-                          {activePreviewReport === 'summary' && "Greenfield Residencies — May 2026"}
-                          {activePreviewReport === 'workers' && "Workforce Standings & Operations — May 2026"}
-                          {activePreviewReport === 'revenue' && "System Financial Ledger & Invoices — May 2026"}
-                          {activePreviewReport === 'recycling' && "Organic Waste Diversion Indicators — May 2026"}
-                          {activePreviewReport === 'complaints' && "Homeowner Dispute Resolution Record — May 2026"}
-                          {activePreviewReport === 'schedule' && "Worker Dispatch & Sequence Compliance — May 2026"}
+                          {activePreviewReport === 'summary' && `Greenfield Residencies — ${selectedCalendarMonth}`}
+                          {activePreviewReport === 'workers' && `Workforce Standings & Operations — ${selectedCalendarMonth}`}
+                          {activePreviewReport === 'revenue' && `System Financial Ledger & Invoices — ${selectedCalendarMonth}`}
+                          {activePreviewReport === 'recycling' && `Organic Waste Diversion Indicators — ${selectedCalendarMonth}`}
+                          {activePreviewReport === 'complaints' && `Homeowner Dispute Resolution Record — ${selectedCalendarMonth}`}
+                          {activePreviewReport === 'schedule' && `Worker Dispatch & Sequence Compliance — ${selectedCalendarMonth}`}
                         </h4>
                       </div>
                       <Leaf className="w-8 h-8 text-[#2E7D32]" />
@@ -9319,19 +9456,19 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                         <>
                           <div className="p-3 bg-slate-50/55 rounded-2xl border border-gray-200/50">
                             <span className="text-[9.5px] font-mono text-gray-405 font-extrabold uppercase tracking-wider block">Total Jobs</span>
-                            <span className="text-lg sm:text-l font-black text-gray-900 mt-1 block">{totalJobsCount.toLocaleString()}</span>
+                            <span className="text-lg sm:text-l font-black text-gray-900 mt-1 block">{reportTotalJobs.toLocaleString()}</span>
                           </div>
                           <div className="p-3 bg-slate-50/55 rounded-2xl border border-gray-200/50">
                             <span className="text-[9.5px] font-mono text-gray-405 font-extrabold uppercase tracking-wider block">Completion</span>
-                            <span className="text-lg sm:text-l font-black text-gray-900 mt-1 block">{donePercent}%</span>
+                            <span className="text-lg sm:text-l font-black text-gray-900 mt-1 block">{reportCompletionRate}%</span>
                           </div>
                           <div className="p-3 bg-slate-50/55 rounded-2xl border border-gray-200/50">
                             <span className="text-[9.5px] font-mono text-gray-405 font-extrabold uppercase tracking-wider block">Revenue</span>
-                            <span className="text-lg sm:text-l font-black text-[#164121] mt-1 block">LKR {totalRevenue.toLocaleString()}</span>
+                            <span className="text-lg sm:text-l font-black text-[#164121] mt-1 block">LKR {reportTotalRevenue.toLocaleString()}</span>
                           </div>
                           <div className="p-3 bg-slate-50/55 rounded-2xl border border-gray-200/50">
                             <span className="text-[9.5px] font-mono text-gray-405 font-extrabold uppercase tracking-wider block">Complaints</span>
-                            <span className="text-lg sm:text-l font-black text-rose-600 mt-1 block">{complaints.length}</span>
+                            <span className="text-lg sm:text-l font-black text-rose-600 mt-1 block">{monthComplaints.length}</span>
                           </div>
                         </>
                       )}
@@ -9348,11 +9485,11 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                           </div>
                           <div className="p-3 bg-slate-50/55 rounded-2xl border border-gray-200/50">
                             <span className="text-[9.5px] font-mono text-gray-405 font-extrabold uppercase tracking-wider block">Verified Volume</span>
-                            <span className="text-lg sm:text-l font-black text-gray-900 mt-1 block">{totalJobsCount} Jobs</span>
+                            <span className="text-lg sm:text-l font-black text-gray-900 mt-1 block">{reportTotalJobs} Jobs</span>
                           </div>
                           <div className="p-3 bg-slate-50/55 rounded-2xl border border-gray-200/50">
                             <span className="text-[9.5px] font-mono text-gray-405 font-extrabold uppercase tracking-wider block">Incidents</span>
-                            <span className="text-lg sm:text-l font-black text-emerald-600 mt-1 block">{jobs.filter(j => j.status === 'issue').length} Alert</span>
+                            <span className="text-lg sm:text-l font-black text-emerald-600 mt-1 block">{reportIssuesCount} Alert</span>
                           </div>
                         </>
                       )}
@@ -9361,7 +9498,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                         <>
                           <div className="p-3 bg-slate-50/55 rounded-2xl border border-gray-200/50">
                             <span className="text-[9.5px] font-mono text-gray-405 font-extrabold uppercase tracking-wider block">Net Ledger Inflow</span>
-                            <span className="text-lg sm:text-l font-black text-[#164121] mt-1 block">LKR {totalRevenue.toLocaleString()}</span>
+                            <span className="text-lg sm:text-l font-black text-[#164121] mt-1 block">LKR {reportTotalRevenue.toLocaleString()}</span>
                           </div>
                           <div className="p-3 bg-slate-50/55 rounded-2xl border border-gray-200/50">
                             <span className="text-[9.5px] font-mono text-gray-405 font-extrabold uppercase tracking-wider block">Monthly Levies</span>
@@ -9382,19 +9519,19 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                         <>
                           <div className="p-3 bg-slate-50/55 rounded-2xl border border-gray-200/50">
                             <span className="text-[9.5px] font-mono text-gray-405 font-extrabold uppercase tracking-wider block">Compost Waste</span>
-                            <span className="text-lg sm:text-l font-black text-gray-900 mt-1 block">{(completedJobsCount * 12).toLocaleString()} kg</span>
+                            <span className="text-lg sm:text-l font-black text-gray-900 mt-1 block">{(reportCompletedJobs * 12).toLocaleString()} kg</span>
                           </div>
                           <div className="p-3 bg-slate-50/55 rounded-2xl border border-gray-200/50">
                             <span className="text-[9.5px] font-mono text-gray-405 font-extrabold uppercase tracking-wider block">Plastics PET</span>
-                            <span className="text-lg sm:text-l font-black text-gray-900 mt-1 block">{(completedJobsCount * 5).toLocaleString()} kg</span>
+                            <span className="text-lg sm:text-l font-black text-gray-900 mt-1 block">{(reportCompletedJobs * 5).toLocaleString()} kg</span>
                           </div>
                           <div className="p-3 bg-slate-50/55 rounded-2xl border border-gray-200/50">
                             <span className="text-[9.5px] font-mono text-gray-405 font-extrabold uppercase tracking-wider block">Corrugated Pulp</span>
-                            <span className="text-lg sm:text-l font-black text-gray-900 mt-1 block">{(completedJobsCount * 4).toLocaleString()} kg</span>
+                            <span className="text-lg sm:text-l font-black text-gray-900 mt-1 block">{(reportCompletedJobs * 4).toLocaleString()} kg</span>
                           </div>
                           <div className="p-3 bg-slate-50/55 rounded-2xl border border-gray-200/50">
                             <span className="text-[9.5px] font-mono text-gray-405 font-extrabold uppercase tracking-wider block">Glass Cullets</span>
-                            <span className="text-lg sm:text-l font-black text-emerald-600 mt-1 block">{(completedJobsCount * 2).toLocaleString()} kg</span>
+                            <span className="text-lg sm:text-l font-black text-emerald-600 mt-1 block">{(reportCompletedJobs * 2).toLocaleString()} kg</span>
                           </div>
                         </>
                       )}
@@ -9403,15 +9540,15 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                         <>
                           <div className="p-3 bg-slate-50/55 rounded-2xl border border-gray-200/50">
                             <span className="text-[9.5px] font-mono text-gray-405 font-extrabold uppercase tracking-wider block">Logged Cases</span>
-                            <span className="text-lg sm:text-l font-black text-gray-900 mt-1 block">{complaints.length} Filed</span>
+                            <span className="text-lg sm:text-l font-black text-gray-900 mt-1 block">{monthComplaints.length} Filed</span>
                           </div>
                           <div className="p-3 bg-slate-50/55 rounded-2xl border border-gray-200/50">
                             <span className="text-[9.5px] font-mono text-gray-405 font-extrabold uppercase tracking-wider block"> SLA Cleared</span>
-                            <span className="text-lg sm:text-l font-black text-emerald-600 mt-1 block">{complaints.filter(c => c.status === 'resolved').length} Resolved</span>
+                            <span className="text-lg sm:text-l font-black text-emerald-600 mt-1 block">{monthComplaints.filter(c => c.status === 'resolved').length} Resolved</span>
                           </div>
                           <div className="p-3 bg-slate-50/55 rounded-2xl border border-gray-200/50">
                             <span className="text-[9.5px] font-mono text-gray-405 font-extrabold uppercase tracking-wider block">Open Pending</span>
-                            <span className="text-lg sm:text-l font-black text-rose-600 mt-1 block">{complaints.filter(c => c.status === 'open' || c.status === 'pending').length} Active</span>
+                            <span className="text-lg sm:text-l font-black text-rose-600 mt-1 block">{monthComplaints.filter(c => c.status === 'open' || c.status === 'pending').length} Active</span>
                           </div>
                           <div className="p-3 bg-slate-50/55 rounded-2xl border border-gray-200/50">
                             <span className="text-[9.5px] font-mono text-gray-405 font-extrabold uppercase tracking-wider block">Onsite SLA Span</span>
@@ -9424,11 +9561,11 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                         <>
                           <div className="p-3 bg-slate-50/55 rounded-2xl border border-gray-200/50">
                             <span className="text-[9.5px] font-mono text-gray-405 font-extrabold uppercase tracking-wider block">OTPF Adherence</span>
-                            <span className="text-lg sm:text-l font-black text-emerald-650 mt-1 block">{donePercent}%</span>
+                            <span className="text-lg sm:text-l font-black text-[#2E7D32] mt-1 block">{reportCompletionRate}%</span>
                           </div>
                           <div className="p-3 bg-slate-50/55 rounded-2xl border border-gray-200/50">
                             <span className="text-[9.5px] font-mono text-gray-405 font-extrabold uppercase tracking-wider block text-rose-600">Delayed Sweeps</span>
-                            <span className="text-lg sm:text-l font-black text-gray-900 mt-1 block">{totalJobsCount > 0 ? 100 - donePercent : 0}%</span>
+                            <span className="text-lg sm:text-l font-black text-gray-900 mt-1 block">{reportTotalJobs > 0 ? 100 - reportCompletionRate : 0}%</span>
                           </div>
                           <div className="p-3 bg-slate-50/55 rounded-2xl border border-gray-200/50">
                             <span className="text-[9.5px] font-mono text-gray-405 font-extrabold uppercase tracking-wider block">Route Deviation</span>
@@ -9436,7 +9573,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                           </div>
                           <div className="p-3 bg-slate-50/55 rounded-2xl border border-gray-200/50">
                             <span className="text-[9.5px] font-mono text-gray-405 font-extrabold uppercase tracking-wider block">Fastest Sweep</span>
-                            <span className="text-lg sm:text-l font-black text-emerald-650 mt-1 block">{fastestSweep}</span>
+                            <span className="text-lg sm:text-l font-black text-[#2E7D32] mt-1 block">{fastestSweep}</span>
                           </div>
                         </>
                       )}
@@ -9511,8 +9648,8 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                               )
                             )}
                             {activePreviewReport === 'revenue' && (
-                              payments.length > 0 ? (
-                                payments.slice(0, 5).map((p: any) => (
+                              monthPayments.length > 0 ? (
+                                monthPayments.slice(0, 5).map((p: any) => (
                                   <tr key={p.id} className="bg-white hover:bg-slate-50/50">
                                     <td className="p-3 font-bold">{p.payment_type || 'Monthly Levy'} - {p.resident_name || 'Resident'}</td>
                                     <td className="p-3 font-mono">{p.reference_code || p.txn_code || `EC-${p.id}`}</td>
@@ -9535,33 +9672,33 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                               <>
                                 <tr className="bg-white">
                                   <td className="p-3 font-bold">Wet Organic Compositing Matter</td>
-                                  <td className="p-3">{(completedJobsCount * 12).toLocaleString()} kg Recycled</td>
+                                  <td className="p-3">{(reportCompletedJobs * 12).toLocaleString()} kg Recycled</td>
                                   <td className="p-2.5">Processed as high-grade biofertilizer</td>
                                   <td className="p-3 text-emerald-700 font-extrabold">98% Diversion</td>
                                 </tr>
                                 <tr className="bg-slate-50/15">
                                   <td className="p-3 font-bold">Plastics (PET / HDPE) Bottles</td>
-                                  <td className="p-3">{(completedJobsCount * 5).toLocaleString()} kg Segregated</td>
+                                  <td className="p-3">{(reportCompletedJobs * 5).toLocaleString()} kg Segregated</td>
                                   <td className="p-2.5">Forwarded for high-density pulping</td>
                                   <td className="p-3 text-emerald-700 font-extrabold">100% Diversion</td>
                                 </tr>
                                 <tr className="bg-white">
                                   <td className="p-3 font-bold">Corrugated Cardboards / Kraft Paper</td>
-                                  <td className="p-3">{(completedJobsCount * 4).toLocaleString()} kg Reclaimed</td>
+                                  <td className="p-3">{(reportCompletedJobs * 4).toLocaleString()} kg Reclaimed</td>
                                   <td className="p-2.5">Supplied to fiberboard processing plant</td>
                                   <td className="p-3 text-emerald-700 font-extrabold">95% Diversion</td>
                                 </tr>
                                 <tr className="bg-slate-50/15">
                                   <td className="p-3 font-bold">Soda-Lime Glass Cullets & Jars</td>
-                                  <td className="p-3">{(completedJobsCount * 2).toLocaleString()} kg Separated</td>
+                                  <td className="p-3">{(reportCompletedJobs * 2).toLocaleString()} kg Separated</td>
                                   <td className="p-2.5">Dispatched to melting zone boundaries</td>
                                   <td className="p-3 text-emerald-700 font-extrabold">90% Diversion</td>
                                 </tr>
                               </>
                             )}
                             {activePreviewReport === 'complaints' && (
-                              complaints.length > 0 ? (
-                                complaints.slice(0, 5).map((c: any) => (
+                              monthComplaints.length > 0 ? (
+                                monthComplaints.slice(0, 5).map((c: any) => (
                                   <tr key={c.id} className="bg-white hover:bg-slate-50/50">
                                     <td className="p-3 font-mono font-bold">COMP-{c.id}</td>
                                     <td className="p-3">{c.title || c.description}</td>
@@ -9582,8 +9719,8 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                               )
                             )}
                             {activePreviewReport === 'schedule' && (
-                              jobs.length > 0 ? (
-                                jobs.slice(0, 5).map((job: any) => (
+                              monthJobs.length > 0 ? (
+                                monthJobs.slice(0, 5).map((job: any) => (
                                   <tr key={job.id} className="bg-white hover:bg-slate-50/50">
                                     <td className="p-3 font-bold">Sweep - Block {job.block?.name || job.unit?.floor?.block?.name || 'A'}</td>
                                     <td className="p-3">{job.shift ? job.shift.charAt(0).toUpperCase() + job.shift.slice(1) : 'Morning'}</td>
@@ -9658,8 +9795,8 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                             <li className="flex items-start gap-2.5">
                               <span className="w-1.5 h-1.5 rounded-full bg-[#2E7D32] mt-1.5 shrink-0" />
                               <p className="leading-snug">
-                                {totalJobsCount > 0
-                                  ? `Roster density optimization achieved a boost in worker resource utilization index across ${totalJobsCount} tasks.`
+                                {reportTotalJobs > 0
+                                  ? `Roster density optimization achieved a boost in worker resource utilization index across ${reportTotalJobs} tasks.`
                                   : "No tasks assigned yet."}
                               </p>
                             </li>
@@ -9671,8 +9808,8 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                             <li className="flex items-start gap-2.5">
                               <span className="w-1.5 h-1.5 rounded-full bg-[#2E7D32] mt-1.5 shrink-0" />
                               <p className="leading-snug">
-                                {totalRevenue > 0
-                                  ? `Residential maintenance levies and invoice collection achieved LKR ${totalRevenue.toLocaleString()} in net inflow.`
+                                {reportTotalRevenue > 0
+                                  ? `Residential maintenance levies and invoice collection achieved LKR ${reportTotalRevenue.toLocaleString()} in net inflow.`
                                   : "No financial inflows recorded."}
                               </p>
                             </li>
@@ -9700,24 +9837,24 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                             <li className="flex items-start gap-2.5">
                               <span className="w-1.5 h-1.5 rounded-full bg-[#2E7D32] mt-1.5 shrink-0" />
                               <p className="leading-snug">
-                                {completedJobsCount > 0
-                                  ? `Net carbon abatement equivalency prevents ~${((completedJobsCount * 12 + completedJobsCount * 5) / 1000).toFixed(1)} Metric Tons of CO2 from municipal entering.`
+                                {reportCompletedJobs > 0
+                                  ? `Net carbon abatement equivalency prevents ~${((reportCompletedJobs * 12 + reportCompletedJobs * 5) / 1000).toFixed(1)} Metric Tons of CO2 from municipal entering.`
                                   : "No carbon offset computed."}
                               </p>
                             </li>
                             <li className="flex items-start gap-2.5">
                               <span className="w-1.5 h-1.5 rounded-full bg-[#2E7D32] mt-1.5 shrink-0" />
                               <p className="leading-snug">
-                                {completedJobsCount > 0
-                                  ? `Solid waste diversion metrics show a ${(completedJobsCount * 0.8 + 10).toFixed(1)}% total drop in landward municipal garbage haulage.`
+                                {reportCompletedJobs > 0
+                                  ? `Solid waste diversion metrics show a ${(reportCompletedJobs * 0.8 + 10).toFixed(1)}% total drop in landward municipal garbage haulage.`
                                   : "No waste diversion metrics available."}
                               </p>
                             </li>
                             <li className="flex items-start gap-2.5">
                               <span className="w-1.5 h-1.5 rounded-full bg-[#2E7D32] mt-1.5 shrink-0" />
                               <p className="leading-snug">
-                                {completedJobsCount > 0
-                                  ? `Total plastic, pulp, and compost recycling quotas achieved high segregation indexes across ${completedJobsCount} completed tasks.`
+                                {reportCompletedJobs > 0
+                                  ? `Total plastic, pulp, and compost recycling quotas achieved high segregation indexes across ${reportCompletedJobs} completed tasks.`
                                   : "Recycling segregation tracking is awaiting completed collections."}
                               </p>
                             </li>
@@ -9758,15 +9895,15 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                             <li className="flex items-start gap-2.5">
                               <span className="w-1.5 h-1.5 rounded-full bg-[#2E7D32] mt-1.5 shrink-0" />
                               <p className="leading-snug">
-                                {totalJobsCount > 0
-                                  ? `Completed collection runs sustain a premium ${donePercent}% punctuality rating.`
+                                {reportTotalJobs > 0
+                                  ? `Completed collection runs sustain a premium ${reportCompletionRate}% punctuality rating.`
                                   : "No completed jobs recorded."}
                               </p>
                             </li>
                             <li className="flex items-start gap-2.5">
                               <span className="w-1.5 h-1.5 rounded-full bg-[#2E7D32] mt-1.5 shrink-0" />
                               <p className="leading-snug">
-                                {totalJobsCount > 0
+                                {reportTotalJobs > 0
                                   ? `Route sequence delay coefficient is minimal with average deviation at ${avgDeviation}.`
                                   : "No route sequence data recorded."}
                               </p>
@@ -9774,7 +9911,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                             <li className="flex items-start gap-2.5">
                               <span className="w-1.5 h-1.5 rounded-full bg-[#2E7D32] mt-1.5 shrink-0" />
                               <p className="leading-snug">
-                                {totalJobsCount > 0
+                                {reportTotalJobs > 0
                                   ? "Overall route sequence alignment remains highly tuned with a minimal delay factor."
                                   : "Awaiting dispatch telemetry."}
                               </p>
