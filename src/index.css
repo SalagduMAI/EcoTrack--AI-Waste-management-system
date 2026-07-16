@@ -1,13 +1,21 @@
 @import "tailwindcss";
 
-/* 1. Scale the root HTML font size from default 16px to 17.5px (approx 109.3%) */
+/* 1. Set base styling for responsive layout, viewport manipulation, and scrolling behavior */
 html {
-  font-size: 17.5px !important;
+  font-size: 15px; /* Perfect for mobile / PWA legibility and preventing layout overflow */
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  touch-action: manipulation; /* Prevents double-tap-to-zoom lag entirely */
+  overscroll-behavior-y: contain; /* Prevents pull-to-refresh reload bouncing when dragging page */
 }
 
-/* 2. Map absolute pixel utility classes used in the codebase to slightly larger sizes */
+@media (min-width: 768px) {
+  html {
+    font-size: 16.5px; /* Slightly larger on desktop for readability */
+  }
+}
+
+/* 2. Map absolute pixel utility classes used in the codebase to slightly larger sizes on desktop */
 @layer utilities {
   /* Tiny utility text overrides (scaled up for high legibility) */
   .\text-\[6px\] { font-size: 8px !important; }
@@ -29,4 +37,25 @@ html {
   .\text-\[15px\] { font-size: 17px !important; }
   .\text-\[17px\] { font-size: 19px !important; }
   .\text-\[19px\] { font-size: 21px !important; }
+}
+
+/* PWA App-like Touch Overrides */
+* {
+  -webkit-tap-highlight-color: transparent; /* Removes blue tapping box overlay in Chrome/Safari */
+}
+
+/* Safe Area Inset Padding for standalone notched devices (iPhone, etc.) */
+@media (display-mode: standalone) {
+  #resident-pwa-container, 
+  #worker-layout-wrapper, 
+  #admin-main-viewport {
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+/* User Selection Overrides for UI Elements */
+button, nav, a, select, input[type="button"], input[type="submit"] {
+  user-select: none;
+  -webkit-user-select: none;
 }
