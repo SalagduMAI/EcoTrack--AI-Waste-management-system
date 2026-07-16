@@ -985,7 +985,7 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
 
       const now = new Date();
       let localDate = now.toLocaleDateString('sv-SE');
-      if (localUser?.shift === 'night' && now.getHours() < 6) {
+      if (localUser?.shift === 'night' && now.getHours() < 10) {
         const yesterday = new Date(now);
         yesterday.setDate(yesterday.getDate() - 1);
         localDate = yesterday.toLocaleDateString('sv-SE');

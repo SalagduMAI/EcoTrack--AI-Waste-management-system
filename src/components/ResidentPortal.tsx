@@ -1011,11 +1011,40 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
     }
     return getLocalDateString(d);
   })();
-  const isTodayCollectionDone = historyItems.some((item: any) => {
-    return item.date === todayLocalDateStr && item.type === 'Done';
-  });
+  const isTodayCollectionDone = (() => {
+    const hasTodayDone = historyItems.some((item: any) => item.date === todayLocalDateStr && item.type === 'Done');
+    if (hasTodayDone) return true;
+    const now = new Date();
+    if (now.getHours() < 12) {
+      const yesterday = new Date(now);
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yesterdayStr = getLocalDateString(yesterday);
+      const hasYesterdayNightDone = historyItems.some((item: any) => 
+        item.date === yesterdayStr && 
+        item.type === 'Done' && 
+        item.class === 'Regular'
+      );
+      if (hasYesterdayNightDone) return true;
+    }
+    return false;
+  })();
 
-  const todayJob = historyItems.find((item: any) => item.date === todayLocalDateStr && item.type === 'Done');
+  const todayJob = (() => {
+    const todayMatch = historyItems.find((item: any) => item.date === todayLocalDateStr && item.type === 'Done');
+    if (todayMatch) return todayMatch;
+    const now = new Date();
+    if (now.getHours() < 12) {
+      const yesterday = new Date(now);
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yesterdayStr = getLocalDateString(yesterday);
+      return historyItems.find((item: any) => 
+        item.date === yesterdayStr && 
+        item.type === 'Done' && 
+        item.class === 'Regular'
+      );
+    }
+    return undefined;
+  })();
   const todayWorkerName = todayJob?.worker || unitProfile?.next_pickup?.worker?.name || 'Staff';
 
   const getFormattedNextPickup = () => {
