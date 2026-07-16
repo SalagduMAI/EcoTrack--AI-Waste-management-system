@@ -54,6 +54,24 @@ const formatLocalDateOnlyString = (dateInput: any) => {
   return `${monthName} ${dayNum}, ${year}`;
 };
 
+const getNextLocalDateString = (dateInput: any) => {
+  if (!dateInput) return '';
+  const str = typeof dateInput === 'string' ? dateInput.split('T')[0] : new Date(dateInput).toISOString().split('T')[0];
+  const date = new Date(str);
+  date.setDate(date.getDate() + 1);
+  const nextStr = date.toISOString().split('T')[0];
+  const parts = nextStr.split('-');
+  if (parts.length !== 3) return nextStr;
+  const monthNum = parseInt(parts[1], 10);
+  const dayNum = parseInt(parts[2], 10);
+  const monthsList = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+  ];
+  const monthName = monthsList[monthNum - 1] || 'May';
+  return `${monthName} ${dayNum}`;
+};
+
 const formatLocalDateTimeString = (dateTimeInput: any) => {
   if (!dateTimeInput) return '';
   try {
@@ -6279,7 +6297,10 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                                       <td className="py-4.5 px-4 text-xs font-bold text-gray-600">
                                         <div className="flex flex-col">
                                           <span>{formatLocalDateOnlyString(item.scheduled_date)}</span>
-                                          <span className="text-[9.5px] text-gray-400 font-semibold">{item.shift ? item.shift.charAt(0).toUpperCase() + item.shift.slice(1) : ''} Shift</span>
+                                          <span className="text-[9.5px] text-gray-400 font-semibold">
+                                            {item.shift ? item.shift.charAt(0).toUpperCase() + item.shift.slice(1) : ''} Shift
+                                            {item.shift?.toLowerCase() === 'night' ? ` (Overnight to ${getNextLocalDateString(item.scheduled_date)})` : ''}
+                                          </span>
                                         </div>
                                       </td>
 
