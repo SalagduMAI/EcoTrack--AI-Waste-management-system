@@ -917,13 +917,29 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
       doc.setFontSize(11);
       doc.text("Schedule Adherence & Sequence Punctuality", 14, 71);
 
-      const segments = monthJobs.slice(0, 8).map((job: any) => {
-        const devVal = job.status === 'done' ? (job.id % 5 === 0 ? 'On Time' : `+${(job.id % 4) * 2 + 2} Mins`) : 'Pending';
-        const otpfVal = job.status === 'done' ? (job.id % 5 === 0 ? '99.1% (On Time)' : '97.5% (On Time)') : 'Pending';
+       const segments = monthJobs.slice(0, 8).map((job: any) => {
+        let devVal = 'Pending';
+        let otpfVal = 'Pending';
+        if (job.status === 'done') {
+          if (job.scanned_at && job.completed_at) {
+            const start = new Date(job.scanned_at);
+            const end = new Date(job.completed_at);
+            const diffMins = Math.round((end.getTime() - start.getTime()) / (1000 * 60));
+            devVal = diffMins > 0 ? `+${diffMins} Mins` : 'On Time';
+            const otpfScore = diffMins <= 15 ? 100 : Math.max(50, 100 - (diffMins - 15) * 5);
+            otpfVal = `${otpfScore}% (On Time)`;
+          } else {
+            devVal = 'On Time';
+            otpfVal = '100% (On Time)';
+          }
+        } else if (job.status === 'issue') {
+          devVal = 'Missed / Failed';
+          otpfVal = '0% (Missed)';
+        }
         return {
           name: `Sweep - Block ${job.block?.name || job.unit?.floor?.block?.name || 'A'}`,
           sched: job.scheduled_date ? `${job.scheduled_date} (${job.shift})` : `Today (${job.shift})`,
-          act: job.status === 'done' ? 'Completed' : 'Pending',
+          act: job.status === 'done' ? 'Completed' : job.status === 'issue' ? 'Issue' : 'Pending',
           dev: devVal,
           OTPF: otpfVal
         };
@@ -8993,8 +9009,24 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
               avgSlaSpan = 'N/A';
             }
 
-            const avgDeviation = reportTotalJobs > 0
-              ? `${((monthJobs.filter(j => j.status === 'done').length * 2.1 + monthJobs.filter(j => j.status === 'issue').length * 15.4) / (reportTotalJobs || 1)).toFixed(1)} Mins`
+            let totalDeviationMins = 0;
+            let deviationCount = 0;
+            monthJobs.forEach(job => {
+              if (job.status === 'done' && job.scanned_at && job.completed_at) {
+                const start = new Date(job.scanned_at);
+                const end = new Date(job.completed_at);
+                const diffMins = (end.getTime() - start.getTime()) / (1000 * 60);
+                if (diffMins > 0) {
+                  totalDeviationMins += diffMins;
+                  deviationCount++;
+                }
+              } else if (job.status === 'issue') {
+                totalDeviationMins += 15; // Assume 15 min delay/issue penalty if failed
+                deviationCount++;
+              }
+            });
+            const avgDeviation = deviationCount > 0
+              ? `${(totalDeviationMins / deviationCount).toFixed(1)} Mins`
               : '0.0 Mins';
 
             const morningDone = monthJobs.filter(j => j.shift?.toLowerCase() === 'morning' && j.status === 'done').length;
@@ -9638,7 +9670,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                                     <td className="p-3 font-bold">{w.name}</td>
                                     <td className="p-3">{w.completionScoreText || '95%'}</td>
                                     <td className="p-3">{w.jobsCountText || '0 Tasks'}</td>
-                                    <td className="p-3 text-amber-500">{w.rating} {'★'.repeat(w.stars)}{'☆'.repeat(5 - w.stars)}</td>
+                                    <td className="p-3 text-amber-500">{w.rating ? `${Number(w.rating).toFixed(1)} ` : 'N/A '} {'★'.repeat(w.stars)}{'☆'.repeat(5 - w.stars)}</td>
                                   </tr>
                                 ))
                               ) : (
@@ -9721,13 +9753,35 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                             {activePreviewReport === 'schedule' && (
                               monthJobs.length > 0 ? (
                                 monthJobs.slice(0, 5).map((job: any) => (
-                                  <tr key={job.id} className="bg-white hover:bg-slate-50/50">
-                                    <td className="p-3 font-bold">Sweep - Block {job.block?.name || job.unit?.floor?.block?.name || 'A'}</td>
-                                    <td className="p-3">{job.shift ? job.shift.charAt(0).toUpperCase() + job.shift.slice(1) : 'Morning'}</td>
-                                    <td className="p-3">{job.status === 'done' ? (job.shift ? job.shift.charAt(0).toUpperCase() + job.shift.slice(1) : 'Morning') : 'Awaiting Dispatch'}</td>
-                                    <td className="p-3 text-emerald-650">{job.status === 'done' ? (job.id % 5 === 0 ? 'On Time' : `+${(job.id % 4) * 2 + 2} mins`) : 'Pending'}</td>
-                                    <td className="p-3 font-black text-emerald-800">{job.status === 'done' ? (job.id % 5 === 0 ? '99.1% OTPF' : '97.5% OTPF') : 'Awaiting'}</td>
-                                  </tr>
+                                  (() => {
+                                    let deviationStr = 'Pending';
+                                    let otpfStr = 'Awaiting';
+                                    if (job.status === 'done') {
+                                      if (job.scanned_at && job.completed_at) {
+                                        const start = new Date(job.scanned_at);
+                                        const end = new Date(job.completed_at);
+                                        const diffMins = Math.round((end.getTime() - start.getTime()) / (1000 * 60));
+                                        deviationStr = diffMins > 0 ? `+${diffMins} mins` : 'On Time';
+                                        const otpfScore = diffMins <= 15 ? 100 : Math.max(50, 100 - (diffMins - 15) * 5);
+                                        otpfStr = `${otpfScore}% OTPF`;
+                                      } else {
+                                        deviationStr = 'On Time';
+                                        otpfStr = '100% OTPF';
+                                      }
+                                    } else if (job.status === 'issue') {
+                                      deviationStr = 'Missed / Failed';
+                                      otpfStr = '0% OTPF';
+                                    }
+                                    return (
+                                      <tr key={job.id} className="bg-white hover:bg-slate-50/50">
+                                        <td className="p-3 font-bold">Sweep - Block {job.block?.name || job.unit?.floor?.block?.name || 'A'}</td>
+                                        <td className="p-3">{job.shift ? job.shift.charAt(0).toUpperCase() + job.shift.slice(1) : 'Morning'}</td>
+                                        <td className="p-3">{job.status === 'done' ? 'Completed' : job.status === 'issue' ? 'Issue' : 'Awaiting Dispatch'}</td>
+                                        <td className="p-3 text-emerald-650">{deviationStr}</td>
+                                        <td className="p-3 font-black text-emerald-800">{otpfStr}</td>
+                                      </tr>
+                                    );
+                                  })()
                                 ))
                               ) : (
                                 <tr className="bg-white">

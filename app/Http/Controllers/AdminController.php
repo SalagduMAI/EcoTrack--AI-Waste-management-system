@@ -914,6 +914,7 @@ class AdminController extends Controller
 
         // 6. Users list
         $users = User::with('units.floor.block')
+            ->withAvg('receivedRatings as rating', 'rating')
             ->orderBy('name', 'asc')
             ->get();
 
