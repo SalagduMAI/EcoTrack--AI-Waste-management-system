@@ -648,7 +648,7 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
   // Billing states
   const [payments, setPayments] = useState<any[]>([]);
   const [showCheckoutModal, setShowCheckoutModal] = useState<any | null>(null);
-  const [cardDetails, setCardDetails] = useState({ number: '', expiry: '', cvc: '' });
+  const [cardDetails, setCardDetails] = useState({ number: '4000 1234 5678 9010', expiry: '12/30', cvc: '123' });
   const [billingFilter, setBillingFilter] = useState<'all' | 'monthly' | 'special' | 'refunds'>('all');
   const [selectedReceiptPayment, setSelectedReceiptPayment] = useState<any | null>(null);
 
@@ -7061,11 +7061,12 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
               </div>
               <button onClick={() => setShowCheckoutModal(null)} className="text-gray-400 hover:text-gray-900 font-extrabold text-xs cursor-pointer">✕</button>
             </div>
- 
-            <p className="text-[11px] text-gray-500 font-semibold leading-relaxed">
-              Settle payment code <strong className="text-gray-950">{showCheckoutModal.item.reference_code}</strong> under PayHere / Stripe sandbox clearance rules.
-            </p>
- 
+
+            <div className="bg-[#FFF8E1] p-3.5 rounded-xl border border-amber-100/50 text-[10.5px] text-amber-850 font-bold flex items-start gap-1.5 leading-relaxed">
+              <span>💡</span>
+              <span><strong>Sandbox Mode:</strong> The payment fields below have been pre-filled with demo credentials. Simply click the button to complete the simulated payment instantly.</span>
+            </div>
+
             <div className="bg-[#F4F8F5] p-3.5 rounded-xl border border-emerald-100/30 flex justify-between items-center text-xs">
               <span className="text-gray-500 font-bold">Outstanding Levy Value</span>
               <span className="text-sm font-black text-[#1E4D2B]">LKR {showCheckoutModal.item.amount.toLocaleString()}.00</span>
@@ -7073,7 +7074,16 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
  
             <form onSubmit={handleConfirmSettlePayment} className="space-y-4">
               <div>
-                <label className="block text-[9px] uppercase tracking-wider text-gray-400 font-bold mb-1">Simulated Card Digits</label>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="block text-[9px] uppercase tracking-wider text-gray-400 font-bold">Simulated Card Digits</label>
+                  <button 
+                    type="button" 
+                    onClick={() => setCardDetails({ number: '4000 1234 5678 9010', expiry: '12/30', cvc: '123' })}
+                    className="text-[9px] text-[#1E4D2B] hover:underline font-extrabold cursor-pointer select-none"
+                  >
+                    Autofill Demo Card
+                  </button>
+                </div>
                 <input 
                   type="text" 
                   required
