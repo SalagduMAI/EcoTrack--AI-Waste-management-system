@@ -10640,10 +10640,18 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
 
                           <div>
                             <label className="block text-[10px] font-extrabold text-[#164121] uppercase tracking-wider mb-2">Interface Language</label>
-                            <select className="w-full text-xs font-semibold py-2 px-3 border border-gray-210 rounded-xl focus:ring-[#2E7D32] text-gray-850">
-                              <option>English (US, UK)</option>
-                              <option>Sinhala (සිංහල)</option>
-                              <option>Tamil (தமிழ்)</option>
+                            <select
+                              value={interfaceLanguage}
+                              onChange={(e) => {
+                                const val = e.target.value as 'english' | 'sinhala' | 'tamil';
+                                setInterfaceLanguage(val);
+                                setFeedbackMessage(`Interface language successfully set to ${val === 'english' ? 'English' : val === 'sinhala' ? 'Sinhala' : 'Tamil'}.`);
+                              }}
+                              className="w-full text-xs font-semibold py-2 px-3 border border-gray-210 rounded-xl focus:ring-[#2E7D32] text-gray-850"
+                            >
+                              <option value="english">English (US, UK)</option>
+                              <option value="sinhala">Sinhala (සිංහල)</option>
+                              <option value="tamil">Tamil (தமிழ்)</option>
                             </select>
                           </div>
 
