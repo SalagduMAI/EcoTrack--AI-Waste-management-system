@@ -7736,15 +7736,28 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
 
           {/* TAB 6: FINANCIAL LEDGER & PAYMENTS TABLE (Payments tab) */}
           {activeTab === 'payments' && (() => {
-            // Calculate statistics from real database payments
-            const totalCollectedAmount = payments.filter(p => p.status === 'paid').reduce((sum, p) => sum + Number(p.amount || 0), 0);
-            const totalOutstandingAmount = payments.filter(p => p.status === 'unpaid').reduce((sum, p) => sum + Number(p.amount || 0), 0);
-            const totalSpecialRequestAmount = payments.filter(p => p.payment_type === 'special_pickup').reduce((sum, p) => sum + Number(p.amount || 0), 0);
+            // Calculate statistics from real database payments filtered by selected calendar month
+            const [selMonthName, selYearStr] = selectedCalendarMonth.split(' ');
+            const selYear = parseInt(selYearStr, 10) || 2026;
+            const selMonthNum = monthsList.indexOf(selMonthName) + 1; // 1-12
+
+            const monthPayments = payments.filter(p => {
+              if (!p.created_at) return false;
+              const parts = p.created_at.split(' ')[0].split('T')[0].split('-');
+              if (parts.length < 2) return false;
+              const payYear = parseInt(parts[0], 10);
+              const payMonthNum = parseInt(parts[1], 10);
+              return payYear === selYear && payMonthNum === selMonthNum;
+            });
+
+            const totalCollectedAmount = monthPayments.filter(p => p.status === 'paid').reduce((sum, p) => sum + Number(p.amount || 0), 0);
+            const totalOutstandingAmount = monthPayments.filter(p => p.status === 'unpaid').reduce((sum, p) => sum + Number(p.amount || 0), 0);
+            const totalSpecialRequestAmount = monthPayments.filter(p => p.payment_type === 'special_pickup').reduce((sum, p) => sum + Number(p.amount || 0), 0);
             const totalAmount = totalCollectedAmount + totalOutstandingAmount;
             const dynamicCollectionRate = totalAmount > 0 ? Math.round((totalCollectedAmount / totalAmount) * 100) : 0;
 
-            // Advanced filter by Search query & tab selectors
-            const displayPayments = payments.filter(p => {
+            // Advanced filter by Search query & tab selectors (applying monthPayments filter)
+            const displayPayments = monthPayments.filter(p => {
               const query = searchQuery.trim().toLowerCase();
               const matchesSearch = !query ||
                 p.resident?.name?.toLowerCase().includes(query) ||
@@ -7762,6 +7775,81 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
 
             return (
               <div className="space-y-6 text-left animate-in fade-in duration-200" id="payments-tab">
+
+                {/* Calendar selection bar for payments telemetry */}
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-4 rounded-3xl border border-gray-150 shadow-xs">
+                  <div className="text-left space-y-0.5">
+                    <h4 className="text-xs font-black text-gray-500 uppercase tracking-wider">Billing Telemetry Cycle</h4>
+                    <p className="text-[11px] text-gray-400 font-bold">Select calendar month to view maintenance levies and transaction summaries.</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const [mName, yStr] = selectedCalendarMonth.split(' ');
+                        const year = parseInt(yStr, 10);
+                        const monthIdx = monthsList.indexOf(mName);
+                        let prevMonthIdx = monthIdx - 1;
+                        let prevYear = year;
+                        if (prevMonthIdx < 0) {
+                          prevMonthIdx = 11;
+                          prevYear -= 1;
+                        }
+                        setSelectedCalendarMonth(`${monthsList[prevMonthIdx]} ${prevYear}`);
+                      }}
+                      className="p-1.5 border border-gray-200 rounded-lg text-gray-550 hover:bg-slate-50 cursor-pointer text-xs font-bold transition-all"
+                      title="Previous Month"
+                    >
+                      &lt;
+                    </button>
+
+                    <select
+                      value={selectedCalendarMonth.split(' ')[0]}
+                      onChange={(e) => {
+                        const year = selectedCalendarMonth.split(' ')[1] || '2026';
+                        setSelectedCalendarMonth(`${e.target.value} ${year}`);
+                      }}
+                      className="bg-white border border-gray-155 rounded-lg px-2.5 py-1.5 text-xs font-black text-[#164121] cursor-pointer focus:ring-1 focus:ring-emerald-500 outline-none"
+                    >
+                      {monthsList.map(m => (
+                        <option key={m} value={m}>{m}</option>
+                      ))}
+                    </select>
+
+                    <select
+                      value={selectedCalendarMonth.split(' ')[1]}
+                      onChange={(e) => {
+                        const month = selectedCalendarMonth.split(' ')[0] || 'May';
+                        setSelectedCalendarMonth(`${month} ${e.target.value}`);
+                      }}
+                      className="bg-white border border-gray-155 rounded-lg px-2.5 py-1.5 text-xs font-black text-[#164121] cursor-pointer focus:ring-1 focus:ring-emerald-500 outline-none"
+                    >
+                      {Array.from({ length: 11 }, (_, i) => 2020 + i).map(y => (
+                        <option key={y} value={y}>{y}</option>
+                      ))}
+                    </select>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const [mName, yStr] = selectedCalendarMonth.split(' ');
+                        const year = parseInt(yStr, 10);
+                        const monthIdx = monthsList.indexOf(mName);
+                        let nextMonthIdx = monthIdx + 1;
+                        let nextYear = year;
+                        if (nextMonthIdx > 11) {
+                          nextMonthIdx = 0;
+                          nextYear += 1;
+                        }
+                        setSelectedCalendarMonth(`${monthsList[nextMonthIdx]} ${nextYear}`);
+                      }}
+                      className="p-1.5 border border-gray-200 rounded-lg text-gray-550 hover:bg-slate-50 cursor-pointer text-xs font-bold transition-all"
+                      title="Next Month"
+                    >
+                      &gt;
+                    </button>
+                  </div>
+                </div>
 
                 {/* Optional banner or top bar descriptor */}
                 <div className="flex justify-end items-center gap-4 border-b border-gray-150 pb-5">
@@ -7786,7 +7874,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
                       <PiggyBank className="w-6 h-6 stroke-[1.6]" />
                     </div>
                     <div>
-                      <span className="text-[9.5px] font-mono text-gray-400 font-extrabold uppercase tracking-wide block">Total collected (May)</span>
+                      <span className="text-[9.5px] font-mono text-gray-400 font-extrabold uppercase tracking-wide block">Total collected ({selectedCalendarMonth.split(' ')[0]})</span>
                       <p className="text-lg font-black text-gray-900 mt-0.5">LKR {totalCollectedAmount.toLocaleString()}</p>
                       <span className="text-[8.5px] text-[#2E7D32] font-black uppercase tracking-tight block mt-0.5">Active compliance cycle</span>
                     </div>
