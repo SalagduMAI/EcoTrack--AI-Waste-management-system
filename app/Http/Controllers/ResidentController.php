@@ -773,34 +773,66 @@ Conversational Thread History:
         }
 
         // 3. Check for workers
-        $isWorkerQuery = preg_match('/\b(worker|workers|staff|collector|collectors)\b/i', $userMessageLower) || 
+        $isWorkerQuery = preg_match('/\b(worker|workers|staff|collector|collectors|cleaner|cleaners|sweeper|sweepers|driver|drivers)\b/i', $userMessageLower) || 
+                         (preg_match('/\b(who|kavda|kawda|kauda)\b/i', $userMessageLower) && preg_match('/\b(assign|assigned|collect|clean|sweep|work|person|staff|driver|worker)\b/i', $userMessageLower)) ||
                          preg_match('/\b(kauda|inne|weda|wada|kavda|kavuda|koyi|enne|floor|unit|ko|workerla|sinnas|kuda|danna|katada|enne|enna|kawda)\b/i', $userMessageLower);
         if ($isWorkerQuery) {
             return $this->getWorkerResponse($userMessage, $resident);
         }
 
-        // 4. Local RAG fallback based on keyword search in database articles
+        // 4. Local RAG fallback based on weighted keyword search in database articles
         $words = preg_split('/\s+/', $userMessageLower);
         $bestArticle = null;
-        $maxMatches = 0;
+        $maxWeight = 0;
+
+        $weights = [
+            // Organic
+            'organic' => 5, 'compost' => 5, 'wet' => 4, 'food' => 5, 'peel' => 5, 'kitchen' => 4, 'vegetable' => 5, 'biodegradable' => 5,
+            // Recyclables
+            'recycling' => 4, 'recyclable' => 4, 'plastic' => 5, 'paper' => 5, 'card' => 5, 'cardboard' => 5, 'blue' => 5, 'pet' => 5, 'bottle' => 5, 'bottles' => 5, 'can' => 4, 'cans' => 4,
+            // Bulk
+            'bulky' => 5, 'furniture' => 5, 'electronics' => 5, 'e-waste' => 5, 'laptop' => 5, 'mattress' => 5, 'sofa' => 5, 'booking' => 5, 'invoice' => 4, '1500' => 5, 'fee' => 4,
+            // Hazard
+            'hazard' => 5, 'hazardous' => 5, 'medicine' => 5, 'medical' => 5, 'syringe' => 5, 'oil' => 5, 'paint' => 5, 'chemical' => 5, 'red' => 5, 'pouch' => 5, 'safety' => 4, 'danger' => 5,
+            // General / Schedule
+            'shifts' => 5, 'shift' => 5, 'hours' => 5, 'schedule' => 5, 'morning' => 5, 'evening' => 5, 'night' => 5, 'timing' => 5, 'routine' => 4, 'chute' => 5, 'chutes' => 5,
+            'collection' => 4, 'collections' => 4, 'today' => 3
+        ];
 
         $kbArticles = KnowledgeBase::all();
         foreach ($kbArticles as $art) {
-            $matches = 0;
+            $currentWeight = 0;
             $tags = preg_split('/[\s,]+/', strtolower($art->tags));
+            $titleLower = strtolower($art->title);
+
             foreach ($words as $word) {
                 $cleanedWord = trim($word, "?.,!\"()[]");
-                if (strlen($cleanedWord) > 3 && (in_array($cleanedWord, $tags) || strpos(strtolower($art->title), $cleanedWord) !== false)) {
-                    $matches++;
+                if (strlen($cleanedWord) > 3) {
+                    $isMatch = false;
+                    foreach ($tags as $tag) {
+                        if (strpos($tag, $cleanedWord) !== false || strpos($cleanedWord, $tag) !== false) {
+                            $isMatch = true;
+                            break;
+                        }
+                    }
+                    if (!$isMatch && strpos($titleLower, $cleanedWord) !== false) {
+                        $isMatch = true;
+                    }
+
+                    if ($isMatch) {
+                        $wordWeight = $weights[$cleanedWord] ?? 1; // default weight 1 for generic words
+                        $currentWeight += $wordWeight;
+                    }
                 }
             }
-            if ($matches > $maxMatches) {
-                $maxMatches = $matches;
+
+            if ($currentWeight > $maxWeight) {
+                $maxWeight = $currentWeight;
                 $bestArticle = $art;
             }
         }
 
-        if ($bestArticle && $maxMatches > 0) {
+        if ($bestArticle && $maxWeight > 0) {
             if ($isSinhalaQuery) {
                 // Return a translated summary of the matched article
                 if ($bestArticle->category === 'organic') {
