@@ -381,7 +381,7 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
   const totalJobsCount = todayJobs.length;
   const completedJobsCount = todayJobs.filter(j => j.status === 'done').length;
   const issuesCount = todayJobs.filter(j => j.status === 'issue').length + complaints.filter(c => c.status === 'open').length;
-  const totalRevenue = payments.filter(p => p.status === 'paid').reduce((sum, p) => sum + p.amount, 0);
+  const totalRevenue = payments.filter(p => p.status === 'paid').reduce((sum, p) => sum + Number(p.amount || 0), 0);
 
   const stats = {
     todayJobs: totalJobsCount,
