@@ -1024,13 +1024,13 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
 
   const getFormattedNextPickup = () => {
     if (!unitProfile || !unitProfile.next_pickup || !unitProfile.next_pickup.scheduled_date) {
-      return "Wednesday at 6:30 AM";
+      return "None scheduled";
     }
     const dateStr = unitProfile.next_pickup.scheduled_date;
-    if (dateStr.includes('No scheduled')) return "Wednesday at 6:30 AM";
+    if (dateStr.includes('No scheduled')) return "None scheduled";
 
     const dateObj = new Date(dateStr);
-    if (isNaN(dateObj.getTime())) return "Wednesday at 6:30 AM";
+    if (isNaN(dateObj.getTime())) return "None scheduled";
 
     const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     const dayName = days[dateObj.getDay()];
@@ -2411,7 +2411,9 @@ export default function ResidentPortal({ token, user, onLogout, onUserUpdate }: 
                           <p className="text-xs text-gray-500 font-bold leading-relaxed mt-1">
                             {(unitProfile?.next_pickup?.status === 'done' || isTodayCollectionDone)
                               ? `Our operator ${todayWorkerName} has successfully cleared your corridor level today.`
-                              : `No collection scheduled for today. Your next pickup is ${getFormattedNextPickup()}.`}
+                              : (unitProfile?.next_pickup && unitProfile.next_pickup.scheduled_date && !unitProfile.next_pickup.scheduled_date.includes('No scheduled'))
+                                ? `No collection scheduled for today. Your next pickup is ${getFormattedNextPickup()}.`
+                                : "No collection scheduled for today."}
                           </p>
                         </div>
                       </div>
