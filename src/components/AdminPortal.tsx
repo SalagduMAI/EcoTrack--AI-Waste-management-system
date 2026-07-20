@@ -4527,6 +4527,90 @@ export default function AdminPortal({ token, user, onLogout, onUserUpdate }: Adm
           {activeTab === 'dashboard' && (
             <div className="space-y-6" id="dashboard-tab">
 
+              {/* Real-time Global Search Overlay on Dashboard */}
+              {searchQuery && (
+                <div className="bg-white p-6 rounded-3xl border border-gray-150 shadow-sm space-y-4 text-left animate-in fade-in duration-200">
+                  <div className="flex justify-between items-center border-b border-gray-100 pb-3">
+                    <div>
+                      <h4 className="text-xs font-black text-gray-500 uppercase tracking-widest">Global Search Results</h4>
+                      <p className="text-[10px] text-gray-400 font-bold mt-0.5">Matching queries for "{searchQuery}"</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setSearchQuery('')}
+                      className="text-xs font-extrabold text-gray-400 hover:text-gray-600 cursor-pointer bg-slate-50 hover:bg-slate-100 px-2 py-1 rounded-lg"
+                    >
+                      Clear Search
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 divide-y md:divide-y-0 md:divide-x divide-gray-105">
+                    {/* Jobs Column */}
+                    <div className="space-y-2.5">
+                      <span className="text-[10px] font-black text-[#2E7D32] uppercase tracking-wider block">Jobs ({filteredJobs.length})</span>
+                      {filteredJobs.length === 0 ? (
+                        <p className="text-xs text-gray-400">No matching jobs found.</p>
+                      ) : (
+                        <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                          {filteredJobs.slice(0, 5).map((job) => (
+                            <div
+                              key={job.id}
+                              onClick={() => {
+                                setActiveTab('jobs');
+                                setSelectedJobId(job.id);
+                                setSearchQuery('');
+                              }}
+                              className="p-2.5 bg-slate-50/50 hover:bg-[#E8F5E9]/30 border border-gray-100 rounded-xl cursor-pointer transition-all flex justify-between items-center text-xs"
+                            >
+                              <div>
+                                <span className="font-extrabold text-slate-800">Job #{job.id} - {job.block?.name} F{job.floor?.floor_number}</span>
+                                <span className="block text-[9.5px] text-gray-400 font-bold mt-0.5">Worker: {job.worker?.name || 'Unassigned'} • Shift: {job.shift}</span>
+                              </div>
+                              <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${
+                                job.status === 'done' ? 'bg-emerald-50 text-emerald-700' :
+                                job.status === 'issue' ? 'bg-rose-50 text-rose-700' : 'bg-amber-50 text-amber-700'
+                              }`}>{job.status}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Payments Column */}
+                    <div className="space-y-2.5 md:pl-6">
+                      <span className="text-[10px] font-black text-blue-700 uppercase tracking-wider block">Payments ({filteredPayments.length})</span>
+                      {filteredPayments.length === 0 ? (
+                        <p className="text-xs text-gray-400">No matching payments found.</p>
+                      ) : (
+                        <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                          {filteredPayments.slice(0, 5).map((pay) => (
+                            <div
+                              key={pay.id}
+                              onClick={() => {
+                                setActiveTab('payments');
+                                setSearchQuery('');
+                              }}
+                              className="p-2.5 bg-slate-50/50 hover:bg-blue-50/20 border border-gray-100 rounded-xl cursor-pointer transition-all flex justify-between items-center text-xs"
+                            >
+                              <div>
+                                <span className="font-extrabold text-slate-800">Invoice: {pay.reference_code || 'REF'}</span>
+                                <span className="block text-[9.5px] text-gray-400 font-bold mt-0.5">Resident: {pay.resident?.name || 'N/A'} • Unit: {pay.unit?.unit_number}</span>
+                              </div>
+                              <div className="text-right">
+                                <span className="block font-black text-gray-800">LKR {pay.amount}</span>
+                                <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase mt-1 inline-block ${
+                                  pay.status === 'paid' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'
+                                }`}>{pay.status}</span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* FOUR TOP METRICS INDEX CORES (Today's Jobs, Completed, Issues, Revenue) */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
 

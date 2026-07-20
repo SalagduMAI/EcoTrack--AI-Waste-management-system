@@ -284,11 +284,22 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
     });
   }, [tasks, history]);
 
-  // Dynamically group tasks by block and floor number
+  // Dynamically group tasks by block and floor number, filtered by searchQuery
   const floorGroups = React.useMemo(() => {
     const groups: Record<string, { blockName: string; floorNumber: number; totalUnits: number; doneUnits: number; items: any[] }> = {};
-    
-    tasks.forEach(t => {
+    const q = searchQuery.toLowerCase().trim();
+
+    const filteredTasks = tasks.filter(t => {
+      if (!q) return true;
+      return (
+        (t.block?.name || '').toLowerCase().includes(q) ||
+        (t.floor?.floor_number?.toString() || '').includes(q) ||
+        (t.unit?.unit_number || '').toLowerCase().includes(q) ||
+        (t.status || '').toLowerCase().includes(q)
+      );
+    });
+
+    filteredTasks.forEach(t => {
       const blockName = t.block?.name || 'Block A';
       const floorNumber = t.floor?.floor_number || 3;
       const key = `${blockName}_${floorNumber}`;
@@ -311,7 +322,7 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
     });
     
     return Object.values(groups);
-  }, [tasks]);
+  }, [tasks, searchQuery]);
 
   // Device Bound check based on browser environment
   const getDeviceBound = () => {
