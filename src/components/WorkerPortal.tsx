@@ -92,6 +92,8 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
   const [settingsSubTab, setSettingsSubTab] = useState<'profile' | 'security' | 'help'>('profile');
   const [showLogoutConfirmModal, setShowLogoutConfirmModal] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  // Search filter query
+  const [searchQuery, setSearchQuery] = useState('');
   
   const defaultAvatar = "https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=150&auto=format&fit=crop";
   const [localUser, setLocalUser] = useState<any>(() => {
@@ -656,7 +658,6 @@ export default function WorkerPortal({ token, user, onLogout, onUserUpdate }: Wo
   }, [localUser?.shift, shiftStartTime]);
 
   // Search filter query
-  const [searchQuery, setSearchQuery] = useState('');
   const [historyTimeFilter, setHistoryTimeFilter] = useState<'week' | 'month' | 'all'>('week');
   const [historySearchQuery, setHistorySearchQuery] = useState('');
   const [perfGraphTerm, setPerfGraphTerm] = useState<'Week' | 'Month' | 'Year'>('Week');
